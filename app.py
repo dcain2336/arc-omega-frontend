@@ -14,7 +14,7 @@ import base64
 from streamlit_mic_recorder import mic_recorder
 from streamlit_js_eval import get_geolocation
 import wolframalpha
-from Github import Github 
+from github import Github 
 from db_handler import DatabaseHandler
 from fpdf import FPDF
 
