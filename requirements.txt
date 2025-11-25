@@ -1,0 +1,15 @@
+streamlit
+google-generativeai
+requests
+tavily-python
+pandas
+openpyxl
+python-docx
+pypdf
+edge-tts
+streamlit-mic-recorder
+streamlit-js-eval
+wolframalpha
+github
+pymongo
+fpdf
