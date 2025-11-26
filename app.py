@@ -4,8 +4,6 @@ from tavily import TavilyClient
 import requests
 import smtplib
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
 import datetime
 import edge_tts
 import asyncio
@@ -17,6 +15,7 @@ import wolframalpha
 from github import Github 
 from db_handler import DatabaseHandler
 from fpdf import FPDF
+import speech_recognition as sr
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="A.R.C. Mainframe", page_icon="🦅", layout="wide")
@@ -29,17 +28,15 @@ except:
     db = None
     FACTS_CONTEXT = "[Memory Offline]"
 
-# --- SECURITY ---
+# --- SECURITY (CRASH FIX APPLIED) ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
     def password_entered():
-        # Check if the key actually exists before reading it
         if "password" in st.session_state:
             if st.session_state["password"] == st.secrets["PASSWORD"]:
                 st.session_state["password_correct"] = True
-                # Don't delete the key immediately to prevent KeyErrors on rerun
             else:
                 st.session_state["password_correct"] = False
 
@@ -50,7 +47,7 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- SELF-HEALING SETUP ---
+# --- SELF-HEALING MODEL SCANNER ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     
@@ -67,27 +64,20 @@ try:
     all_models.sort(key=model_priority)
     
     active_model = None
-    last_error = None
     
     # 3. BRUTE FORCE LOOP: Try each model until one works
     for m_name in all_models:
         try:
             test_model = genai.GenerativeModel(m_name)
-            # Send a tiny test ping to check if Quota exists
-            response = test_model.generate_content("test")
-            # If we get here, it worked!
+            response = test_model.generate_content("test") # Ping test
             active_model = test_model
             st.toast(f"System Online. Locked on: {m_name}")
             break
-        except Exception as e:
-            # If this model fails (404 or 429), just try the next one
-            last_error = e
+        except:
             continue
             
     if not active_model:
-        st.error(f"CRITICAL FAILURE: Every available model failed.")
-        st.write("Models visible to your key:", all_models)
-        st.write("Last Error:", last_error)
+        st.error(f"CRITICAL FAILURE: No working models found.")
         st.stop()
         
     model = active_model
@@ -100,27 +90,39 @@ except Exception as e:
     st.error(f"System Config Error: {e}")
     st.stop()
 
-
-
-
 # --- CORE FUNCTIONS ---
 def get_user_location():
     loc = get_geolocation()
     if loc: return f"{loc['coords']['latitude']}, {loc['coords']['longitude']}"
     return "Unknown"
 
+def transcribe_audio(audio_bytes):
+    try:
+        r = sr.Recognizer()
+        with io.BytesIO(audio_bytes) as source_bytes:
+            # Write bytes to a temp file for SR to read
+            with open("temp_audio.wav", "wb") as f: f.write(source_bytes.read())
+            
+        with sr.AudioFile("temp_audio.wav") as source:
+            audio = r.record(source)
+            text = r.recognize_google(audio)
+            return text
+    except:
+        return None
+
 async def generate_neural_voice(text, voice_style):
     try:
         voices = {"Jarvis": "en-US-ChristopherNeural", "Cortana": "en-US-AriaNeural", "Alfred": "en-GB-RyanNeural"}
         selected_voice = voices.get(voice_style, "en-US-ChristopherNeural")
-        clean_text = text.replace("*", "").replace("#", "").split("SYSTEM DATA:")[0]
+        # Clean text of markdown and system tags before speaking
+        clean_text = text.replace("*", "").replace("#", "").replace("`", "").split("SENTINEL LOG:")[0]
         communicate = edge_tts.Communicate(clean_text, selected_voice)
         audio_fp = io.BytesIO()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio": audio_fp.write(chunk["data"])
         audio_fp.seek(0)
         audio_b64 = base64.b64encode(audio_fp.read()).decode()
-        return f'<audio autoplay="true"><source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3"></audio>'
+        return f'<audio autoplay="true" controls><source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3"></audio>'
     except: return None
 
 def create_pdf(chat_history):
@@ -135,6 +137,32 @@ def create_pdf(chat_history):
         pdf.ln(2)
     return pdf.output(dest='S').encode('latin-1')
 
+# --- TOOLS ---
+def perform_search(query):
+    try:
+        response = tavily.search(query=query, max_results=3)
+        return "\n".join([f"- {r['title']}: {r['content']}" for r in response.get('results', [])])
+    except: return "[Search Failed]"
+
+def send_alert(message):
+    try:
+        sender = st.secrets["EMAIL_USER"]
+        password = st.secrets["EMAIL_PASS"]
+        recipient = st.secrets["PHONE_GATEWAY"]
+
+        msg = MIMEText(message)
+        msg["Subject"] = "A.R.C. ALERT"
+        msg["From"] = sender
+        msg["To"] = recipient
+
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender, password)
+            server.sendmail(sender, recipient, msg.as_string())
+        return f"SIGNAL SENT TO {recipient}"
+    except Exception as e:
+        return f"COMM FAILURE: {e}"
+
 # --- SELF-IMPROVEMENT ENGINE ---
 def propose_upgrade(request):
     try:
@@ -148,7 +176,6 @@ def propose_upgrade(request):
         INSTRUCTIONS:
         1. Write FULL Python code.
         2. AFTER code, write "### EXPLANATION_START ###".
-        3. Write bulleted explanation.
         """
         response = model.generate_content(prompt)
         full_text = response.text
@@ -171,33 +198,7 @@ def execute_upgrade(new_code):
         return True
     except: return False
 
-# --- TOOLS ---
-def perform_search(query):
-    try:
-        response = tavily.search(query=query, max_results=3)
-        return "\n".join([f"- {r['title']}: {r['content']}" for r in response.get('results', [])])
-    except: return "[Search Failed]"
-def send_alert(message):
-    try:
-        sender = st.secrets["EMAIL_USER"]
-        password = st.secrets["EMAIL_PASS"]
-        recipient = st.secrets["PHONE_GATEWAY"]
-
-        msg = MIMEText(message)
-        msg["Subject"] = "A.R.C. ALERT"
-        msg["From"] = sender
-        msg["To"] = recipient
-
-        # Connect to Gmail Server
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
-            server.login(sender, password)
-            server.sendmail(sender, recipient, msg.as_string())
-        return f"SIGNAL SENT TO {recipient}"
-    except Exception as e:
-        return f"COMM FAILURE: {e}"
-
-## --- PERSONA & DIRECTORATE ---
+# --- PERSONA & DIRECTORATE ---
 SYSTEM_PROMPT = f"""
 ### SYSTEM ROLE: A.R.C. (Autonomous Response Coordinator)
 You are the Chief of Staff for a Marine EOD Technician, Minister, and Coach.
@@ -238,7 +239,6 @@ Analyze the user's request and simulate input from the relevant Division:
 5. **Visuals:** `[TOOL_IMAGE: description]` (Generate Art)
 6. **Math:** `[TOOL_MATH: equation]` (Wolfram Physics/Calc)
 """
-
 
 # --- UI INTERFACE ---
 st.title("🦅 A.R.C. Mainframe")
@@ -294,17 +294,24 @@ for msg in st.session_state.history[-4:]:
 
 # --- INPUT ---
 col1, col2 = st.columns([1, 6])
-with col1: voice_input = mic_recorder(start_prompt="● REC", stop_prompt="■ STOP", just_once=True, key="recorder")
+with col1: voice_data = mic_recorder(start_prompt="● REC", stop_prompt="■ STOP", just_once=True, key="recorder")
 with col2: text_input = st.chat_input("Command Line...")
 
 final_prompt = None
-if voice_input and voice_input['bytes']: final_prompt = "Voice Signal Received. Respond."
+
+# FIX: Actually transcribe the audio
+if voice_data and voice_data['bytes']: 
+    with st.spinner("Transcribing..."):
+        transcribed_text = transcribe_audio(voice_data['bytes'])
+        if transcribed_text:
+            final_prompt = transcribed_text
+        else:
+            st.error("Audio unintelligible.")
+
 if text_input: final_prompt = text_input
 
 if final_prompt:
-    if text_input: st.chat_message("user").markdown(final_prompt)
-    else: st.chat_message("user").markdown("*(Voice Signal)*")
-
+    st.chat_message("user").markdown(final_prompt)
     content = [f"[SYSTEM: User Location {location_data}] " + final_prompt]
     st.session_state.history.append({"role": "user", "parts": content})
 
@@ -313,13 +320,21 @@ if final_prompt:
         response = chat.send_message(content)
         text = response.text
         
-        # Tools
+        # Tools Logic
         if "[TOOL_SEARCH:" in text:
             q = text.split("[TOOL_SEARCH:")[1].split("]")[0]
             if "near me" in q: q += f" near {location_data}"
             data = perform_search(q)
             response = chat.send_message(f"SEARCH DATA: {data}")
             text = response.text
+            
+        # FIX: Added Missing Alert Logic
+        if "[TOOL_ALERT:" in text:
+            msg = text.split("[TOOL_ALERT:")[1].split("]")[0]
+            status_report = send_alert(msg)
+            st.toast(status_report)
+            text += f"\n\n**SENTINEL LOG:** {status_report}"
+            
         if "[TOOL_UPGRADE:" in text:
             req = text.split("[TOOL_UPGRADE:")[1].split("]")[0]
             text += f"\n\n**SYSTEM:** Upgrade Request '{req}' logged in Sidebar."
@@ -337,5 +352,7 @@ if final_prompt:
 
     with st.chat_message("assistant"): st.markdown(text)
     st.session_state.history.append({"role": "model", "parts": [text]})
+    
+    # FIX: Added 'controls' to audio player so you can manually play if autoplay fails
     audio_html = asyncio.run(generate_neural_voice(text, voice_choice))
     if audio_html: st.markdown(audio_html, unsafe_allow_html=True)
