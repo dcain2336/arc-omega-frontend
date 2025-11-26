@@ -5,14 +5,29 @@
 import streamlit as st
 from streamlit_mic_recorder import mic_recorder
 import speech_recognition as sr
-import edge_tts, asyncio, base64, io, datetime, pytz, json, boto3
+import edge_tts, asyncio, base64, io, datetime, pytz, json, boto3, random
 from cryptography.fernet import Fernet
 import google.generativeai as genai
 import ray
 from tavily import TavilyClient
 
 ray.init(ignore_reinit_error=True)
-genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+
+# ────── MULTI-KEY GOOGLE SETUP (cycles automatically) ──────
+def get_working_gemini_key():
+    keys = st.secrets["GOOGLE_KEYS"]
+    random.shuffle(keys)
+    for key in keys:
+        try:
+            genai.configure(api_key=key)
+            genai.GenerativeModel("gemini-2.0-flash-exp")  # test call
+            return key
+        except:
+            continue
+    raise Exception("All Google keys exhausted")
+
+CURRENT_KEY = get_working_gemini_key()
+genai.configure(api_key=CURRENT_KEY)
 
 # ────── ENCRYPTION ──────
 cipher = Fernet(st.secrets["ENCRYPTION_KEY"].encode())
@@ -24,13 +39,11 @@ if "memory" not in st.session_state:
     e = st.session_state.get("enc_memory")
     st.session_state.memory = decrypt(e) if e else {"history":[], "style_docs":[]}
 
-# ────── MARK VII REACTOR (exact movie version from your photo) ──────
+# ────── MARK VII REACTOR (exact from your photo) ──────
 def reactor(state="normal"):
-    colors = {
-        "normal":"#00f0ff","thinking":"#00ff99","debate":"#ff00ff",
-        "emergency":"#ff0033","success":"#00ff00","auth":"#ffaa00",
-        "ghost":"#4400bb","talking":"#00f0ff"
-    }
+    colors = {"normal":"#00f0ff","thinking":"#00ff99","debate":"#ff00ff",
+              "emergency":"#ff0033","success":"#00ff00","auth":"#ffaa00",
+              "ghost":"#4400bb","talking":"#00f0ff"}
     c = colors.get(state, "#00f0ff")
     st.markdown(f"""
     <div style="position:fixed;top:8px;right:8px;width:210px;height:210px;z-index:9999;pointer-events:none">
@@ -65,7 +78,7 @@ def reactor(state="normal"):
     if state == "emergency": st.markdown('<script>document.body.classList.add("emergency")</script>', unsafe_allow_html=True)
     if state == "talking":   st.markdown('<script>document.body.classList.add("talking")</script>', unsafe_allow_html=True)
 
-# ────── VOICE ──────
+# ────── VOICE & LISTEN ──────
 async def speak(text):
     reactor("talking")
     comm = edge_tts.Communicate(text, "en-US-GuyNeural")
@@ -85,11 +98,11 @@ def listen():
         except: pass
     return None
 
-# ────── COUNCIL (5 sub-agents) ──────
+# ────── COUNCIL (5 agents) ──────
 @ray.remote
 def agent(query):
     m = genai.GenerativeModel("gemini-2.0-flash-exp")
-    return m.generate_content(f"Respond as ARC — concise, sharp, military-style: {query}").text
+    return m.generate_content(f"Respond as ARC — sharp, military, no fluff: {query}").text
 
 async def council(query):
     reactor("thinking")
