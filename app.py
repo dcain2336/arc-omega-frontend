@@ -177,6 +177,25 @@ def perform_search(query):
         response = tavily.search(query=query, max_results=3)
         return "\n".join([f"- {r['title']}: {r['content']}" for r in response.get('results', [])])
     except: return "[Search Failed]"
+def send_alert(message):
+    try:
+        sender = st.secrets["EMAIL_USER"]
+        password = st.secrets["EMAIL_PASS"]
+        recipient = st.secrets["PHONE_GATEWAY"]
+
+        msg = MIMEText(message)
+        msg["Subject"] = "A.R.C. ALERT"
+        msg["From"] = sender
+        msg["To"] = recipient
+
+        # Connect to Gmail Server
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender, password)
+            server.sendmail(sender, recipient, msg.as_string())
+        return f"SIGNAL SENT TO {recipient}"
+    except Exception as e:
+        return f"COMM FAILURE: {e}"
 
 ## --- PERSONA & DIRECTORATE ---
 SYSTEM_PROMPT = f"""
