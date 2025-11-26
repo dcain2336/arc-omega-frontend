@@ -89,28 +89,40 @@ except:
     db = None
     FACTS_CONTEXT = "[Memory Offline]"
 
-# --- DIAGNOSTIC MODEL SCANNER ---
+# --- TARGETED MODEL SELECTOR ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     
-    # 1. Ask Google what models are available
-    available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    # We prioritize models from YOUR SPECIFIC LIST that are stable and fast
+    # Priority 1: 2.0 Flash (Stable)
+    # Priority 2: Flash Lite (High Quota Backup)
+    # Priority 3: Flash Latest (Generic Alias)
+    targets = [
+        "models/gemini-2.0-flash", 
+        "models/gemini-2.0-flash-lite", 
+        "models/gemini-flash-latest"
+    ]
     
-    # 2. PRINT THEM TO THE SCREEN (Yellow Box)
-    st.warning(f"DEBUG MODE ACTIVATED. Your Key has access to: {available}")
+    active_model = None
     
-    # 3. Try to pick a safe one automatically
-    if "models/gemini-1.5-flash" in available: 
-        model_name = "models/gemini-1.5-flash"
-    elif "models/gemini-pro" in available: 
-        model_name = "models/gemini-pro"
-    elif "models/gemini-1.5-pro-latest" in available:
-        model_name = "models/gemini-1.5-pro-latest"
-    else: 
-        model_name = available[0] # Just grab the first one found
-    
-    model = genai.GenerativeModel(model_name)
-    st.toast(f"Attempting Connection to: {model_name}")
+    # Scan and Lock
+    for t in targets:
+        try:
+            test_model = genai.GenerativeModel(t)
+            # Tiny ping to verify quota
+            response = test_model.generate_content("ping") 
+            active_model = test_model
+            st.toast(f"System Online. Brain: {t}")
+            break
+        except:
+            continue
+            
+    if not active_model:
+        # Emergency Fallback if all else fails
+        st.error("Quota Limit Reached on all channels. Deploying Fallback.")
+        model = genai.GenerativeModel("models/gemini-2.0-flash-exp") # Risky but available
+    else:
+        model = active_model
     
     tavily = TavilyClient(api_key=st.secrets["TAVILY_KEY"])
     wf_client = None
@@ -244,7 +256,7 @@ with st.expander("🗄️ THE VAULT (LOGS & INTEL)"):
 with st.sidebar:
     st.header("SYSTEM SETTINGS")
     voice_choice = st.selectbox("Voice", ["Jarvis", "Cortana", "Alfred"])
-    st.caption("A.R.C. Version 20.0")
+    st.caption("A.R.C. Version 21.0 (Neural)")
 
 # --- PERSONA ---
 if st.session_state["emergency_mode"]:
@@ -288,7 +300,6 @@ user_msg = None
 is_voice = False
 
 if voice_data and voice_data['bytes']:
-    # Transcribe locally
     with st.spinner("Decrypting Audio..."):
         transcribed = transcribe_audio(voice_data['bytes'])
         if transcribed:
