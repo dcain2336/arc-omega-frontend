@@ -1,11 +1,7 @@
 streamlit
 streamlit-mic-recorder
-speechrecognition
+openai
 edge-tts
-google-generativeai
-ray[default]
-tavily-python
-boto3
-cryptography
-pytz
-pyaudio  # fixes mic on cloud
+twilio
+python-dotenv
+requests
