@@ -1,7 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
 from tavily import TavilyClient
-import requests
 import smtplib
 from email.mime.text import MIMEText
 import datetime
@@ -16,13 +15,12 @@ import wolframalpha
 from github import Github 
 from db_handler import DatabaseHandler
 from fpdf import FPDF
-import speech_recognition as sr
 import pandas as pd
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="A.R.C. Mainframe", page_icon="⚛️", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CUSTOM CSS (PROJECT ORACLE THEME) ---
+# --- CUSTOM CSS (PROJECT ORACLE) ---
 st.markdown("""
 <style>
     .stApp { background-color: #050505; color: #00FFFF; font-family: 'Courier New', monospace; }
@@ -31,12 +29,10 @@ st.markdown("""
     .stButton>button:hover { background-color: #00FFFF; color: #000; box-shadow: 0 0 15px #00FFFF; }
     .emergency-btn>button { color: #FF0000 !important; border-color: #FF0000 !important; }
     .emergency-btn>button:hover { background-color: #FF0000 !important; color: #000 !important; box-shadow: 0 0 20px #FF0000 !important; }
-    div[data-testid="stMetricValue"] { color: #00FFFF; font-size: 24px; text-shadow: 0 0 5px #00FFFF; }
+    /* Metric Styling */
+    div[data-testid="stMetricValue"] { color: #00FFFF; font-size: 18px; text-shadow: 0 0 5px #00FFFF; }
+    div[data-testid="stMetricLabel"] { color: #666; font-size: 12px; }
     header {visibility: hidden;}
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] { gap: 2px; }
-    .stTabs [data-baseweb="tab"] { background-color: #111; color: #00FFFF; border: 1px solid #00FFFF; }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] { background-color: #00FFFF; color: #000; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -45,24 +41,24 @@ if "emergency_mode" not in st.session_state: st.session_state["emergency_mode"] 
 if "history" not in st.session_state: st.session_state.history = []
 if "uploaded_files" not in st.session_state: st.session_state["uploaded_files"] = []
 
-# --- TOOLS ---
+# --- CRITICAL TOOLS ---
 def send_alert(message):
     try:
         sender = st.secrets["EMAIL_USER"]
         password = st.secrets["EMAIL_PASS"]
         recipient = st.secrets["PHONE_GATEWAY"]
         msg = MIMEText(message)
-        msg["Subject"] = "A.R.C. ALERT"
+        msg["Subject"] = "A.R.C. SECURITY"
         msg["From"] = sender
         msg["To"] = recipient
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(sender, password)
             server.sendmail(sender, recipient, msg.as_string())
-        return f"SIGNAL SENT TO {recipient}"
-    except Exception as e: return f"COMM FAILURE: {e}"
+        return "SIGNAL SENT"
+    except Exception as e: return f"FAIL: {e}"
 
-# --- SECURITY (INTRUDER TRAP) ---
+# --- SECURITY CHECK ---
 def check_password():
     if "password_correct" not in st.session_state: st.session_state["password_correct"] = False
     
@@ -72,13 +68,10 @@ def check_password():
                 st.session_state["password_correct"] = True
             else:
                 st.session_state["password_correct"] = False
-                # --- INTRUDER LOGIC ---
-                try:
-                    # Try to grab IP from headers (Works on Streamlit Cloud)
-                    ip = st.context.headers.get("X-Forwarded-For", "Unknown IP")
-                except: ip = "Hidden IP"
-                send_alert(f"⚠️ SECURITY BREACH: Failed Login Attempt from IP: {ip}")
-                st.error("ACCESS DENIED. SECURITY TEAM NOTIFIED.")
+                # INTRUDER TRAP LOGIC
+                try: ip = st.context.headers.get("X-Forwarded-For", "Hidden IP")
+                except: ip = "Unknown"
+                send_alert(f"⚠️ UNAUTHORIZED ACCESS ATTEMPT. IP: {ip}")
                 
     if not st.session_state["password_correct"]:
         st.text_input("ACCESS CODE:", type="password", on_change=password_entered, key="password")
@@ -87,7 +80,7 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- CONNECT BRAIN ---
+# --- BRAIN & DATABASE ---
 try:
     db = DatabaseHandler(st.secrets["MONGO_URI"])
     FACTS_CONTEXT = db.get_facts()
@@ -95,202 +88,161 @@ except:
     db = None
     FACTS_CONTEXT = "[Memory Offline]"
 
-# --- SELF-HEALING SETUP ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    def model_priority(name):
-        if "1.5-flash" in name and "exp" not in name: return 0
-        if "1.5-pro" in name and "exp" not in name: return 1
-        if "flash" in name: return 2
-        return 3
-    all_models.sort(key=model_priority)
-    active_model = None
-    for m_name in all_models:
-        try:
-            test_model = genai.GenerativeModel(m_name)
-            response = test_model.generate_content("test")
-            active_model = test_model
-            break
-        except: continue
-    if not active_model: st.error("CRITICAL FAILURE: No Models."); st.stop()
-    model = active_model
+    # Force the working model based on logs
+    model = genai.GenerativeModel("gemini-2.0-flash-exp") 
     tavily = TavilyClient(api_key=st.secrets["TAVILY_KEY"])
     wf_client = None
     if "WOLFRAM_ID" in st.secrets: wf_client = wolframalpha.Client(st.secrets["WOLFRAM_ID"])
 except Exception as e: st.error(f"Config Error: {e}"); st.stop()
 
-# --- FUNCTIONS ---
+# --- HELPER FUNCTIONS ---
 def get_user_location():
     loc = get_geolocation()
     if loc: return loc['coords']['latitude'], loc['coords']['longitude']
     return None, None
 
-def transcribe_audio(audio_bytes):
-    try:
-        r = sr.Recognizer()
-        with io.BytesIO(audio_bytes) as source_bytes:
-            with open("temp_audio.wav", "wb") as f: f.write(source_bytes.read())
-        with sr.AudioFile("temp_audio.wav") as source:
-            audio = r.record(source)
-            return r.recognize_google(audio)
-    except: return None
-
 async def generate_neural_voice(text, voice_style):
     try:
         voices = {"Jarvis": "en-US-ChristopherNeural", "Cortana": "en-US-AriaNeural", "Alfred": "en-GB-RyanNeural"}
-        selected_voice = voices.get(voice_style, "en-US-ChristopherNeural")
-        clean_text = text.replace("*", "").replace("#", "").split("SENTINEL LOG:")[0]
-        communicate = edge_tts.Communicate(clean_text, selected_voice)
+        selected = voices.get(voice_style, "en-US-ChristopherNeural")
+        clean = text.replace("*", "").replace("#", "").split("SENTINEL LOG:")[0]
+        communicate = edge_tts.Communicate(clean, selected)
         audio_fp = io.BytesIO()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio": audio_fp.write(chunk["data"])
         audio_fp.seek(0)
-        audio_b64 = base64.b64encode(audio_fp.read()).decode()
-        return f'<audio autoplay="true" controls><source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3"></audio>'
+        b64 = base64.b64encode(audio_fp.read()).decode()
+        return f'<audio autoplay="true" controls><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except: return None
 
 def create_pdf(chat_history):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="A.R.C. MISSION REPORT", ln=1, align='C')
+    pdf.cell(200, 10, txt="MISSION REPORT", ln=1, align='C')
     for msg in chat_history:
         role = "ARC" if msg["role"] == "model" else "USER"
-        text = msg["parts"][0].encode('latin-1', 'replace').decode('latin-1')
+        text = str(msg["parts"][0]).encode('latin-1', 'replace').decode('latin-1')
         pdf.multi_cell(0, 10, txt=f"{role}: {text}")
         pdf.ln(2)
     return pdf.output(dest='S').encode('latin-1')
 
-def perform_search(query):
+def perform_search(query, lat, lon):
     try:
+        # FORCE GPS INJECTION
+        if lat and lon: query += f" near coordinates {lat}, {lon}"
         response = tavily.search(query=query, max_results=3)
         return "\n".join([f"- {r['title']}: {r['content']}" for r in response.get('results', [])])
     except: return "[Search Failed]"
 
-# --- DASHBOARD HEADER ---
+# --- HUD HEADER (TIME ZONES) ---
 lat, lon = get_user_location()
-c1, c2, c3, c4 = st.columns(4)
-utc_now = datetime.datetime.now(pytz.utc)
-local_now = datetime.datetime.now() 
-c1.metric("ZULU (UTC)", utc_now.strftime("%H:%M"))
-c2.metric("LOCAL", local_now.strftime("%H:%M"))
+t1, t2, t3, t4, t5 = st.columns(5)
+
+# World Clock
+utc = datetime.datetime.now(pytz.utc)
+est = utc.astimezone(pytz.timezone('US/Eastern'))
+cst = utc.astimezone(pytz.timezone('US/Central'))
+mst = utc.astimezone(pytz.timezone('US/Mountain'))
+pst = utc.astimezone(pytz.timezone('US/Pacific'))
+oki = utc.astimezone(pytz.timezone('Japan'))
+
+t1.metric("ZULU", utc.strftime("%H:%M"))
+t2.metric("EST (HOME)", est.strftime("%H:%M"))
+t3.metric("CST", cst.strftime("%H:%M"))
+t4.metric("PST", pst.strftime("%H:%M"))
+t5.metric("OKINAWA", oki.strftime("%H:%M"))
+
 if lat and lon:
-    c3.metric("LAT", f"{lat:.2f}")
-    c4.metric("LON", f"{lon:.2f}")
-    with st.expander("🗺️ SATELLITE UPLINK"):
-        df = pd.DataFrame({'lat': [lat], 'lon': [lon]})
-        st.map(df, zoom=12)
-else:
-    c3.metric("LAT", "--.--")
-    c4.metric("LON", "--.--")
+    with st.expander(f"📡 SATELLITE LOCK: {lat:.2f}, {lon:.2f}"):
+        st.map(pd.DataFrame({'lat': [lat], 'lon': [lon]}), zoom=12)
 
 st.divider()
 
 # --- ACTION DECK ---
 act1, act2, act3, act4 = st.columns(4)
-
 with act1:
-    if st.button("🕶️ BLACKOUT", key="blackout"):
+    if st.button("🕶️ BLACKOUT"):
         st.session_state.history = []
         st.rerun()
-
 with act2:
-    if st.button("🖨️ PDF REP", key="pdf"):
+    if st.button("🖨️ PDF REP"):
         if st.session_state.history:
             pdf_bytes = create_pdf(st.session_state.history)
             st.download_button("DOWNLOAD", data=pdf_bytes, file_name="mission_rep.pdf", mime='application/pdf')
-
 with act3:
-    # Upload is now inside an expander to keep UI clean
     with st.popover("📂 UPLOAD"):
         uploaded_file = st.file_uploader("Drop Intel", type=['txt', 'pdf', 'png', 'jpg'])
-        if uploaded_file:
-            # Save to session state so The Vault can see it
-            st.session_state["uploaded_files"].append(uploaded_file.name)
-            st.toast(f"Intel Received: {uploaded_file.name}")
-
+        if uploaded_file: st.session_state["uploaded_files"].append(uploaded_file)
 with act4:
     if st.session_state["emergency_mode"]:
-        if st.button("🟢 ALL CLEAR", key="clear"):
+        if st.button("🟢 ALL CLEAR"):
             st.session_state["emergency_mode"] = False
             st.rerun()
     else:
         st.markdown('<div class="emergency-btn">', unsafe_allow_html=True)
-        if st.button("🚨 EMERGENCY", key="emergency"):
+        if st.button("🚨 EMERGENCY"):
             st.session_state["emergency_mode"] = True
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-# --- THE VAULT (LOGS & DOCS) ---
+# --- EOD UTILITY DRAWER ---
+with st.expander("💥 E.O.D. BLAST CALCULATOR"):
+    ec1, ec2 = st.columns(2)
+    weight = ec1.number_input("Explosive Weight (lbs)", min_value=0.0, step=0.1)
+    exp_type = ec2.selectbox("Type", ["TNT", "C4", "Semtex", "Black Powder"])
+    
+    # Simple K-Factor logic (Approximation for quick ref)
+    ref_factor = {"TNT": 1.0, "C4": 1.37, "Semtex": 1.35, "Black Powder": 0.55}
+    if st.button("CALCULATE NEW & STANDOFF"):
+        new_val = weight * ref_factor[exp_type]
+        standoff = 328 * (new_val ** (1/3)) # K328 for public safety (rough example)
+        st.success(f"N.E.W.: {new_val:.2f} lbs (TNT Eq)")
+        st.warning(f"MIN EVAC DISTANCE (Unshielded): {standoff:.0f} ft")
+
+# --- THE VAULT ---
 with st.expander("🗄️ THE VAULT (LOGS & INTEL)"):
     tab_logs, tab_docs = st.tabs(["SENTINEL LOGS", "CLASSIFIED DOCS"])
     with tab_logs:
-        st.caption("Recent Alerts from Database:")
-        if db:
-            # Visualize the last 5 alerts from Mongo
+        if db: 
             logs = list(db.alerts.find().sort("date", -1).limit(5))
-            for log in logs:
-                st.text(f"[{log['date']}] {log['content']}")
-        else:
-            st.warning("Database Offline.")
-            
+            for log in logs: st.text(f"[{log['date']}] {log['content']}")
     with tab_docs:
-        st.caption("Session Intel:")
         if st.session_state["uploaded_files"]:
-            for f in st.session_state["uploaded_files"]:
-                st.code(f"📄 {f}")
-        else:
-            st.info("No documents intercepted this session.")
+            for f in st.session_state["uploaded_files"]: st.code(f"📄 {f.name}")
 
-# --- SIDEBAR SETTINGS ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("SYSTEM SETTINGS")
     voice_choice = st.selectbox("Voice", ["Jarvis", "Cortana", "Alfred"])
-    st.caption(f"Brain: {model.model_name}")
-    st.caption("A.R.C. Version 19.0 (Sentinel)")
+    st.caption("A.R.C. Version 20.0")
 
-# --- PERSONA LOGIC ---
+# --- PERSONA ---
 if st.session_state["emergency_mode"]:
-    st.markdown("""<style>.stApp { background-color: #200000; } div[data-testid="stMetricValue"] { color: #FF0000; text-shadow: 0 0 10px #FF0000; }</style>""", unsafe_allow_html=True)
-    SYSTEM_PROMPT = f"""
-    ### PRIORITY ONE: EMERGENCY MODE ACTIVE
-    You are a tactical crisis response AI. 
-    **RULES:**
-    1. NO GREETINGS. NO FLUFF.
-    2. BULLET POINTS ONLY.
-    3. PRIORITIZE: Life Safety > Property.
-    4. ACT AS: Trauma Surgeon / EOD Lead.
-    **MEMORY:** {FACTS_CONTEXT}
-    """
-    st.error("🚨 EMERGENCY PROTOCOLS ACTIVE. COMMS MINIMIZED. 🚨")
+    st.markdown("""<style>.stApp { background-color: #200000; }</style>""", unsafe_allow_html=True)
+    SYSTEM_PROMPT = f"EMERGENCY MODE. ACT AS CRISIS RESPONDER. PRIORITIZE LIFE SAFETY. MEMORY: {FACTS_CONTEXT}"
+    st.error("🚨 CRISIS PROTOCOLS ACTIVE 🚨")
 else:
     SYSTEM_PROMPT = f"""
-    ### SYSTEM ROLE: A.R.C. (Autonomous Response Coordinator)
-    Chief of Staff for Marine EOD Tech, Minister, Coach.
+    ### SYSTEM ROLE: A.R.C.
+    Chief of Staff for Marine EOD Tech.
     
     **DIRECTORATE:**
-    I. TECH (Engineering, Cyber, Mechanics)
-    II. SAFETY (Medical, Legal, Defense)
-    III. INTEL (News, Weather, Research)
-    IV. HUMAN (Agrarian, Psychology, Cooking)
-    
-    **RULES:**
-    - Consult sub-committees before answering.
-    - Maintain professional "Jarvis-like" tone.
+    I. TECH | II. SAFETY | III. INTEL | IV. HUMAN | V. AGRARIAN
     
     **TOOLS:**
-    - [TOOL_SEARCH: query] -> Live Info
-    - [TOOL_ALERT: msg] -> SMS User
-    - [TOOL_IMAGE: prompt] -> Generate Art
-    - [TOOL_MATH: eq] -> Wolfram Calc
+    - [TOOL_SEARCH: query] (Uses GPS Lat/Lon)
+    - [TOOL_ALERT: msg] (SMS User)
+    - [TOOL_IMAGE: prompt] (Art)
     
     **MEMORY:** {FACTS_CONTEXT}
     """
 
-# --- CHAT INTERFACE ---
+# --- CHAT LOGIC ---
 if not st.session_state.history:
-    st.session_state.history = [{"role": "model", "parts": ["A.R.C. Online. Awaiting Command." if not st.session_state["emergency_mode"] else "CRISIS MODE. STATE NATURE OF EMERGENCY."]}]
+    st.session_state.history = [{"role": "model", "parts": ["A.R.C. Online. Awaiting Command."]}]
 
 for msg in st.session_state.history[-4:]:
     role = "user" if msg["role"] == "user" else "assistant"
@@ -300,40 +252,51 @@ for msg in st.session_state.history[-4:]:
             try: st.image(msg["parts"][0].split("(")[1].split(")")[0])
             except: pass
 
-# --- INPUT ---
-col_mic, col_text = st.columns([1, 6])
-with col_mic: voice_data = mic_recorder(start_prompt="🎤", stop_prompt="🛑", just_once=True, key="recorder")
-with col_text: text_input = st.chat_input("Enter Command..." if not st.session_state["emergency_mode"] else "STATE EMERGENCY...")
+# --- INPUT HANDLING (MULTI-MODAL) ---
+c_mic, c_text = st.columns([1, 6])
+with c_mic: voice_data = mic_recorder(start_prompt="🎤", stop_prompt="🛑", key="recorder")
+with c_text: text_input = st.chat_input("Command...")
 
-final_prompt = None
-if voice_data and voice_data['bytes']: 
-    with st.spinner("Decrypting Audio..."):
-        transcribed_text = transcribe_audio(voice_data['bytes'])
-        if transcribed_text: final_prompt = transcribed_text
+user_msg = None
+is_voice = False
 
-if text_input: final_prompt = text_input
+if voice_data and voice_data['bytes']:
+    # DIRECT NEURAL INJECTION (Send Audio Bytes to Gemini)
+    user_msg = "Audio Transmission Received."
+    is_voice = True
+    audio_bytes = voice_data['bytes']
+    
+if text_input:
+    user_msg = text_input
 
-if final_prompt:
-    st.chat_message("user").markdown(final_prompt)
-    user_context = f"[LOC: {lat},{lon}] " + final_prompt
-    st.session_state.history.append({"role": "user", "parts": [user_context]})
-    history_formatted = [{"role": "user" if m["role"]=="user" else "model", "parts": m["parts"]} for m in st.session_state.history]
+if user_msg:
+    st.chat_message("user").markdown(user_msg)
+    
+    # Prepare Content
+    if is_voice:
+        # Wrap audio for Gemini
+        content = [SYSTEM_PROMPT, f"[SYSTEM: User Location {lat}, {lon}]", 
+                   {"mime_type": "audio/wav", "data": audio_bytes}]
+    else:
+        content = [SYSTEM_PROMPT, f"[SYSTEM: User Location {lat}, {lon}] " + user_msg]
+
+    st.session_state.history.append({"role": "user", "parts": [user_msg]})
     
     with st.status("Computing...", expanded=False) as status:
-        chat = model.start_chat(history=history_formatted[:-1])
-        response = chat.send_message([SYSTEM_PROMPT, user_context])
+        chat = model.start_chat(history=[]) # Stateless for tools to work better
+        response = chat.send_message(content)
         text = response.text
         
+        # TOOL EXECUTION
         if not st.session_state["emergency_mode"]:
             if "[TOOL_SEARCH:" in text:
                 q = text.split("[TOOL_SEARCH:")[1].split("]")[0]
-                data = perform_search(q)
+                data = perform_search(q, lat, lon) # Pass GPS
                 response = chat.send_message(f"SEARCH DATA: {data}")
                 text = response.text
             if "[TOOL_ALERT:" in text:
                 msg = text.split("[TOOL_ALERT:")[1].split("]")[0]
                 stat = send_alert(msg)
-                # Log alert to DB for The Vault
                 if db: db.log_alert(msg)
                 text += f"\n\n**LOG:** {stat}"
             if "[TOOL_IMAGE:" in text:
@@ -344,5 +307,7 @@ if final_prompt:
 
     with st.chat_message("assistant"): st.markdown(text)
     st.session_state.history.append({"role": "model", "parts": [text]})
+    
     if not st.session_state["emergency_mode"]:
-        asyncio.run(generate_neural_voice(text, voice_choice))
+        audio_html = asyncio.run(generate_neural_voice(text, voice_choice))
+        if audio_html: st.markdown(audio_html, unsafe_allow_html=True)
