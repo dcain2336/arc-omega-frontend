@@ -31,12 +31,18 @@ except:
 
 # --- SECURITY ---
 def check_password():
-    if "password_correct" not in st.session_state: st.session_state["password_correct"] = False
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
     def password_entered():
-        if st.session_state["password"] == st.secrets["PASSWORD"]:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]
-        else: st.session_state["password_correct"] = False
+        # Check if the key actually exists before reading it
+        if "password" in st.session_state:
+            if st.session_state["password"] == st.secrets["PASSWORD"]:
+                st.session_state["password_correct"] = True
+                # Don't delete the key immediately to prevent KeyErrors on rerun
+            else:
+                st.session_state["password_correct"] = False
+
     if not st.session_state["password_correct"]:
         st.text_input("ACCESS CODE:", type="password", on_change=password_entered, key="password")
         return False
