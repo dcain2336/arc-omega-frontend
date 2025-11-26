@@ -48,7 +48,15 @@ if not check_password(): st.stop()
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     model = genai.GenerativeModel("gemini-1.5-pro")
+    try:
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    # We are switching to the specific stable build '002' to fix the 404 error
+    model = genai.GenerativeModel("gemini-1.5-flash-002") 
     tavily = TavilyClient(api_key=st.secrets["TAVILY_KEY"])
+    wf_client = None
+    if "WOLFRAM_ID" in st.secrets: wf_client = wolframalpha.Client(st.secrets["WOLFRAM_ID"])
+except Exception as e: st.error(f"System Config Error: {e}"); st.stop()
+ = TavilyClient(api_key=st.secrets["TAVILY_KEY"])
     wf_client = None
     if "WOLFRAM_ID" in st.secrets: wf_client = wolframalpha.Client(st.secrets["WOLFRAM_ID"])
 except: st.error("System Config Error."); st.stop()
