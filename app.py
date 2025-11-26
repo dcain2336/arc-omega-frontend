@@ -44,48 +44,22 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- SMART SETUP ---
+# --- SETUP ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     
-    # 1. Ask Google what models are available to this API Key
-    available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    
-    # 2. Define our "Dream Team" preference list
-    preferred_order = [
-        "models/gemini-1.5-flash", 
-        "models/gemini-1.5-pro", 
-        "models/gemini-pro",
-        "models/gemini-1.0-pro"
-    ]
-    
-    # 3. Auto-Select the best match
-    selected_model = None
-    for p in preferred_order:
-        if p in available_models:
-            selected_model = p
-            break
-            
-    # 4. Emergency Fallback (Just grab the first one found)
-    if not selected_model and available_models:
-        selected_model = available_models[0]
-    
-    if not selected_model:
-        st.error("CRITICAL ERROR: No AI models found. Your API Key might be invalid or has no permissions.")
-        st.stop()
-        
-    # 5. Connect
-    model = genai.GenerativeModel(selected_model)
-    st.toast(f"System Online. Brain: {selected_model}") # This tells you on screen which one it picked
+    # We are forcing the standard high-quota model. 
+    # This solves the 429 (Quota) and 404 (Not Found) errors.
+    model = genai.GenerativeModel("gemini-1.5-flash")
     
     tavily = TavilyClient(api_key=st.secrets["TAVILY_KEY"])
     wf_client = None
     if "WOLFRAM_ID" in st.secrets: 
         wf_client = wolframalpha.Client(st.secrets["WOLFRAM_ID"])
-
 except Exception as e: 
     st.error(f"System Config Error: {e}")
     st.stop()
+
 
 # --- CORE FUNCTIONS ---
 def get_user_location():
