@@ -47,7 +47,7 @@ if not check_password(): st.stop()
 # --- SETUP ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-1.5-pro")
     tavily = TavilyClient(api_key=st.secrets["TAVILY_KEY"])
     wf_client = None
     if "WOLFRAM_ID" in st.secrets: wf_client = wolframalpha.Client(st.secrets["WOLFRAM_ID"])
