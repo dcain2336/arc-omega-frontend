@@ -44,45 +44,45 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- SMART SCANNER SETUP ---
+# --- SETUP ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     
-    # 1. Ask Google for the list of models this key can access
+    # 1. Get a list of ALL models your key can see
     all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
     
-    # 2. Define our "Safe List" (Free & Fast models)
-    # We look for these exact names in your account
-    priority_targets = [
-        "models/gemini-1.5-flash",
+    # 2. The "Free & Fast" Priority List
+    # We prioritize 1.5 Flash, then 2.0 Flash (Exp), then 1.0 Pro.
+    # We EXCLUDE "2.5-pro" because it has no free quota.
+    targets = [
+        "models/gemini-1.5-flash", 
         "models/gemini-1.5-flash-001",
         "models/gemini-1.5-flash-002",
-        "models/gemini-1.5-pro",
-        "models/gemini-pro"
+        "models/gemini-2.0-flash-exp",  # This is likely the winner for you
+        "models/gemini-1.5-flash-8b",
+        "models/gemini-1.0-pro"
     ]
     
-    selected_model_name = None
-    
-    # 3. Pick the first match
-    for target in priority_targets:
-        if target in all_models:
-            selected_model_name = target
+    selected_model = None
+    for t in targets:
+        if t in all_models:
+            selected_model = t
             break
             
-    # 4. Fallback: If no matches, just grab the first non-experimental model
-    if not selected_model_name:
+    # 3. Last Resort Fallback (Find ANY model with "flash" in the name)
+    if not selected_model:
         for m in all_models:
-            if "exp" not in m:
-                selected_model_name = m
+            if "flash" in m and "exp" in m:
+                selected_model = m
                 break
-                
-    if not selected_model_name:
-        st.error(f"CRITICAL: No usable models found. Your Key sees: {all_models}")
+
+    # 4. If we still have nothing, panic and show the user what we see
+    if not selected_model:
+        st.error(f"CRITICAL: No free models found. Your Key only sees: {all_models}")
         st.stop()
-        
-    # 5. Connect
-    model = genai.GenerativeModel(selected_model_name)
-    st.toast(f"System Online. Brain: {selected_model_name}")
+
+    model = genai.GenerativeModel(selected_model)
+    st.toast(f"System Online. Brain: {selected_model}")
     
     tavily = TavilyClient(api_key=st.secrets["TAVILY_KEY"])
     wf_client = None
@@ -91,6 +91,7 @@ try:
 except Exception as e: 
     st.error(f"System Config Error: {e}")
     st.stop()
+
 
 
 # --- CORE FUNCTIONS ---
