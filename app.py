@@ -85,12 +85,26 @@ try:
     model = genai.GenerativeModel("models/gemini-2.0-flash-exp")
     
     tavily = TavilyClient(api_key=st.secrets["TAVILY_KEY"])
-    db = DatabaseHandler(st.secrets["MONGO_URI"])
-    FACTS_CONTEXT = db.get_facts()
+    
+    # Database Connection (Safe Failover)
+    try:
+        db = DatabaseHandler(st.secrets["MONGO_URI"])
+        FACTS_CONTEXT = db.get_facts()
+    except:
+        db = None
+        FACTS_CONTEXT = "[Memory Database Offline]"
+        
     if "WOLFRAM_ID" in st.secrets: wf_client = wolframalpha.Client(st.secrets["WOLFRAM_ID"])
 except Exception as e: st.error(f"Boot Sequence Failed: {e}"); st.stop()
 
-# --- CORE INTELLIGENCE TOOLS ---
+# --- CORE FUNCTIONS (MOVED UP TO FIX NAME ERROR) ---
+
+def get_user_location():
+    try:
+        loc = get_geolocation()
+        if loc: return loc['coords']['latitude'], loc['coords']['longitude']
+    except: pass
+    return None, None
 
 def perform_search(query, lat, lon):
     try:
@@ -132,7 +146,6 @@ def self_upgrade_logic(request):
         return True
     except Exception as e: return False
 
-# --- AUDIO/VISUAL ---
 def transcribe_audio(audio_bytes):
     try:
         r = sr.Recognizer()
@@ -155,7 +168,7 @@ async def generate_voice(text, voice_style):
         return f'<audio autoplay="true" style="display:none;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except: return None
 
-# --- INTERFACE ---
+# --- INTERFACE START ---
 lat, lon = get_user_location()
 status_color = "#FF0000" if st.session_state["emergency_mode"] else "#00FFFF"
 
@@ -269,7 +282,7 @@ if user_msg:
                 
         except Exception as e:
             if "429" in str(e): rotate_key(); st.rerun()
-            text = "Standby. Rerouting..."
+            text = f"Standby. Rerouting... ({e})"
 
     with st.chat_message("assistant"): st.markdown(text)
     st.session_state.history.append({"role": "model", "parts": [text]})
