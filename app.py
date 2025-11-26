@@ -44,13 +44,45 @@ def check_password():
 
 if not check_password(): st.stop()
 
-# --- SETUP ---
+# --- SMART SCANNER SETUP ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     
-    # We are forcing the standard high-quota model. 
-    # This solves the 429 (Quota) and 404 (Not Found) errors.
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    # 1. Ask Google for the list of models this key can access
+    all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    
+    # 2. Define our "Safe List" (Free & Fast models)
+    # We look for these exact names in your account
+    priority_targets = [
+        "models/gemini-1.5-flash",
+        "models/gemini-1.5-flash-001",
+        "models/gemini-1.5-flash-002",
+        "models/gemini-1.5-pro",
+        "models/gemini-pro"
+    ]
+    
+    selected_model_name = None
+    
+    # 3. Pick the first match
+    for target in priority_targets:
+        if target in all_models:
+            selected_model_name = target
+            break
+            
+    # 4. Fallback: If no matches, just grab the first non-experimental model
+    if not selected_model_name:
+        for m in all_models:
+            if "exp" not in m:
+                selected_model_name = m
+                break
+                
+    if not selected_model_name:
+        st.error(f"CRITICAL: No usable models found. Your Key sees: {all_models}")
+        st.stop()
+        
+    # 5. Connect
+    model = genai.GenerativeModel(selected_model_name)
+    st.toast(f"System Online. Brain: {selected_model_name}")
     
     tavily = TavilyClient(api_key=st.secrets["TAVILY_KEY"])
     wf_client = None
