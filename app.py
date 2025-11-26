@@ -16,6 +16,7 @@ from github import Github
 from db_handler import DatabaseHandler
 from fpdf import FPDF
 import pandas as pd
+import speech_recognition as sr
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="A.R.C. Mainframe", page_icon="⚛️", layout="wide", initial_sidebar_state="collapsed")
@@ -88,10 +89,29 @@ except:
     db = None
     FACTS_CONTEXT = "[Memory Offline]"
 
+# --- DIAGNOSTIC MODEL SCANNER ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    # Force the working model based on logs
-    model = genai.GenerativeModel("gemini-2.0-flash-exp") 
+    
+    # 1. Ask Google what models are available
+    available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    
+    # 2. PRINT THEM TO THE SCREEN (Yellow Box)
+    st.warning(f"DEBUG MODE ACTIVATED. Your Key has access to: {available}")
+    
+    # 3. Try to pick a safe one automatically
+    if "models/gemini-1.5-flash" in available: 
+        model_name = "models/gemini-1.5-flash"
+    elif "models/gemini-pro" in available: 
+        model_name = "models/gemini-pro"
+    elif "models/gemini-1.5-pro-latest" in available:
+        model_name = "models/gemini-1.5-pro-latest"
+    else: 
+        model_name = available[0] # Just grab the first one found
+    
+    model = genai.GenerativeModel(model_name)
+    st.toast(f"Attempting Connection to: {model_name}")
+    
     tavily = TavilyClient(api_key=st.secrets["TAVILY_KEY"])
     wf_client = None
     if "WOLFRAM_ID" in st.secrets: wf_client = wolframalpha.Client(st.secrets["WOLFRAM_ID"])
@@ -102,6 +122,16 @@ def get_user_location():
     loc = get_geolocation()
     if loc: return loc['coords']['latitude'], loc['coords']['longitude']
     return None, None
+
+def transcribe_audio(audio_bytes):
+    try:
+        r = sr.Recognizer()
+        with io.BytesIO(audio_bytes) as source_bytes:
+            with open("temp_audio.wav", "wb") as f: f.write(source_bytes.read())
+        with sr.AudioFile("temp_audio.wav") as source:
+            audio = r.record(source)
+            return r.recognize_google(audio)
+    except: return None
 
 async def generate_neural_voice(text, voice_style):
     try:
@@ -131,7 +161,6 @@ def create_pdf(chat_history):
 
 def perform_search(query, lat, lon):
     try:
-        # FORCE GPS INJECTION
         if lat and lon: query += f" near coordinates {lat}, {lon}"
         response = tavily.search(query=query, max_results=3)
         return "\n".join([f"- {r['title']}: {r['content']}" for r in response.get('results', [])])
@@ -141,7 +170,6 @@ def perform_search(query, lat, lon):
 lat, lon = get_user_location()
 t1, t2, t3, t4, t5 = st.columns(5)
 
-# World Clock
 utc = datetime.datetime.now(pytz.utc)
 est = utc.astimezone(pytz.timezone('US/Eastern'))
 cst = utc.astimezone(pytz.timezone('US/Central'))
@@ -150,7 +178,7 @@ pst = utc.astimezone(pytz.timezone('US/Pacific'))
 oki = utc.astimezone(pytz.timezone('Japan'))
 
 t1.metric("ZULU", utc.strftime("%H:%M"))
-t2.metric("EST (HOME)", est.strftime("%H:%M"))
+t2.metric("EST", est.strftime("%H:%M"))
 t3.metric("CST", cst.strftime("%H:%M"))
 t4.metric("PST", pst.strftime("%H:%M"))
 t5.metric("OKINAWA", oki.strftime("%H:%M"))
@@ -194,11 +222,10 @@ with st.expander("💥 E.O.D. BLAST CALCULATOR"):
     weight = ec1.number_input("Explosive Weight (lbs)", min_value=0.0, step=0.1)
     exp_type = ec2.selectbox("Type", ["TNT", "C4", "Semtex", "Black Powder"])
     
-    # Simple K-Factor logic (Approximation for quick ref)
     ref_factor = {"TNT": 1.0, "C4": 1.37, "Semtex": 1.35, "Black Powder": 0.55}
     if st.button("CALCULATE NEW & STANDOFF"):
         new_val = weight * ref_factor[exp_type]
-        standoff = 328 * (new_val ** (1/3)) # K328 for public safety (rough example)
+        standoff = 328 * (new_val ** (1/3)) 
         st.success(f"N.E.W.: {new_val:.2f} lbs (TNT Eq)")
         st.warning(f"MIN EVAC DISTANCE (Unshielded): {standoff:.0f} ft")
 
@@ -252,7 +279,7 @@ for msg in st.session_state.history[-4:]:
             try: st.image(msg["parts"][0].split("(")[1].split(")")[0])
             except: pass
 
-# --- INPUT HANDLING (MULTI-MODAL) ---
+# --- INPUT HANDLING ---
 c_mic, c_text = st.columns([1, 6])
 with c_mic: voice_data = mic_recorder(start_prompt="🎤", stop_prompt="🛑", key="recorder")
 with c_text: text_input = st.chat_input("Command...")
@@ -261,37 +288,32 @@ user_msg = None
 is_voice = False
 
 if voice_data and voice_data['bytes']:
-    # DIRECT NEURAL INJECTION (Send Audio Bytes to Gemini)
-    user_msg = "Audio Transmission Received."
-    is_voice = True
-    audio_bytes = voice_data['bytes']
-    
+    # Transcribe locally
+    with st.spinner("Decrypting Audio..."):
+        transcribed = transcribe_audio(voice_data['bytes'])
+        if transcribed:
+            user_msg = transcribed
+            is_voice = True
+
 if text_input:
     user_msg = text_input
 
 if user_msg:
     st.chat_message("user").markdown(user_msg)
     
-    # Prepare Content
-    if is_voice:
-        # Wrap audio for Gemini
-        content = [SYSTEM_PROMPT, f"[SYSTEM: User Location {lat}, {lon}]", 
-                   {"mime_type": "audio/wav", "data": audio_bytes}]
-    else:
-        content = [SYSTEM_PROMPT, f"[SYSTEM: User Location {lat}, {lon}] " + user_msg]
+    content = [SYSTEM_PROMPT, f"[SYSTEM: User Location {lat}, {lon}] " + user_msg]
 
     st.session_state.history.append({"role": "user", "parts": [user_msg]})
     
     with st.status("Computing...", expanded=False) as status:
-        chat = model.start_chat(history=[]) # Stateless for tools to work better
+        chat = model.start_chat(history=[]) 
         response = chat.send_message(content)
         text = response.text
         
-        # TOOL EXECUTION
         if not st.session_state["emergency_mode"]:
             if "[TOOL_SEARCH:" in text:
                 q = text.split("[TOOL_SEARCH:")[1].split("]")[0]
-                data = perform_search(q, lat, lon) # Pass GPS
+                data = perform_search(q, lat, lon)
                 response = chat.send_message(f"SEARCH DATA: {data}")
                 text = response.text
             if "[TOOL_ALERT:" in text:
