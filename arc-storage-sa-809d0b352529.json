@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "arc-storage-sa",
+  "private_key_id": "809d0b3525295d3d041b2f34b8bce1e7f4337e38",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDSdNCsj+M1OmwE\nB2guDRjuITWTjm0gTJl2JBbLpKIHIfHS7m0L3GINESiZVeZQg40mkOM5qar6LjMI\nrwXFc9Jkht4kK1wzz5K/zg16L5afWG2KF6+bs++o1Bl1ovYm7Mu2QGQ7PHTR97QZ\n1pQ2HJGV38WkhF0hpJcVBVTsWYKlSGS/7/fdO/YsOuRGnOVqa6SC+FTQi/Qa8egb\nGIiv66y/WMhwRFMigyKt+cmC6u3QXYpgG8k+tuC/4sUhbPZU2D91P/ownFLRLOcc\nA4KvXlmGEU3hX6XQhf9JmyO1oMyrECjhpr+LIBCKGbKjGPMY/O06MTnECq3Zxg1N\nJ5GtiNIbAgMBAAECggEAII3cR40cVrv6QGdK6LCy9gbiDDigTbo7lMhBVG/bdmH8\nT6X87TRCYIYScyGT9klbGKeZ1m4V2gwybbnxGRlw5obsLskcQpFtwEil0gwxbuWV\nUCKY0etz+3gPliBGlj/TxRXRy03vPhlkXQjRtUsXBAlwv6GP7GfSzPgdqk+wQ1OX\nETAiFak0DekOJUeL1kL7oRoZirxinowTvHKtXXbqUWat52BI+ESQXCa0+7fp4qUe\nONvDQOM8YNM1GU1qq6TCff90Bo5ELq33Q3hOyMBQh29zGT0PFHCXqNz17WE0NCGI\nabO6Tde5pGTPsBziBZolQcXmkGA4faTeZib/4+PvAQKBgQDxOszpNLD/0xlje58Q\na7VSeX/rJSR2NAbAYJwC+TwwS3M8fZDTQg1D2W8sNnrZvbXUoVd2UL1rh82hGyK1\ntfPkftGEpNAIJRGN96KVSBlqpDRIye76DFdJSKDst8Gyzh8/3bdx3iRHOvv2WWIM\nZH0UpbgU3IEc8Y38tdXyp4U/GwKBgQDfV6bRwP4sMmPt2ek8RWL59z6ktvWRTEDE\nfz7fVQajkut185SLI2EiehwN7YchrsFLWxg1+TZSrzKgEOIZGTsYXVNGIj8l3iQ2\nn4jbsyBIxp28Tu3agl6P/KS9TXcFBWPY3DveozKFqp7p/BkoBZG3Rgv3yIuGyL62\nJdKi8/zpAQKBgDvDAXjU4PS/645F1gZPaMBh8Vrj/MB76yBFzuC9tjeQuZ/Gy9ZK\nitbAS1Z8uLqw0Rc4UV6yafr1ze+XtWWnCiEVefqOiis6Y7r0Goc5MXLF814FCPtR\ni15Qa+25KHePsRY1a3j+O6aZ6koBotTHIGW5GH2ykxoEjdSJh9NxxQT5AoGBAMIy\nu9nc3uVdN2jEtrnyd1p0cqLUd3hMfnCdV/TnQKuQf26DSuEk9Tv+Q1CU/Y/7HRXB\n8q5TsLl6nyFxLLe4KZtI4rSz6Iarvn9EfsLR4TuGf/cSBl2eSE0Y18HGjrvt8ODK\ntsAi1TZGooE/9DvJg+eBX7ynQzMCcFl/T8TjNEEBAoGAUC33mhEQVCbvAl9sj/+h\nOVPZ5ub1/mEkkJDUWM891DaNithTWd6dnG3BgEr6sCyQTJxTZ1+8dH3EH5C5h34a\nf4dXJK+nDSwwqbcsyEyEnlHbtsN6DmQTv/00O50yXH3fKrRIZoMLgWq9TElTUMoV\nXxkyTGXbA6CmUNK+g08rcq4=\n-----END PRIVATE KEY-----\n",
+  "client_email": "arc-storage-sa@arc-storage-sa.iam.gserviceaccount.com",
+  "client_id": "112622490390245070395",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/arc-storage-sa%40arc-storage-sa.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
