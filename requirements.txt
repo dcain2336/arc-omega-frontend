@@ -1,6 +1,5 @@
 streamlit
 requests
 google-cloud-storage
-edge-tts
-aiofiles
-pydub
+torch
+torchaudio
