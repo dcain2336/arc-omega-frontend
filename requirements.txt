@@ -3,3 +3,4 @@ requests
 edge-tts
 google-cloud-storage
 huggingface-hub
+nest-asyncio
