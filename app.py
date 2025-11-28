@@ -1,11 +1,3 @@
-# requirements.txt  ←←← CREATE THIS FILE TOO
-streamlit
-requests
-google-cloud-storage
-edge-tts
-pydub
-aiofiles
-
 # app.py  ←←← FULL FIXED VERSION
 import streamlit as st
 from datetime import datetime, timezone
