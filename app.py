@@ -38,7 +38,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # World Time Ticker
-now = datetime.datetime.now(timezone.utc)
+now = datetime.now(timezone.utc)
 times = "NYC: " + now.astimezone(timezone.utc).strftime("%H:%M") + " | LON: " + now.astimezone(timezone.utc).strftime("%H:%M") + " | TOK: " + now.astimezone(timezone.utc).strftime("%H:%M") + " | SYD: " + now.astimezone(timezone.utc).strftime("%H:%M")
 st.markdown(f"<div class='ticker'>A.R.C. ONLINE • {times} • ENCRYPTED MODE ACTIVE</div>", unsafe_allow_html=True)
 
