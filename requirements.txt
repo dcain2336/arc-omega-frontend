@@ -1,25 +1,16 @@
 streamlit
 google-generativeai
-openai # For OpenAI, OpenRouter, Perplexity, Deepseek clients
+openai
 groq
 requests
 pymongo
-pinecone-client # For vector database/RAG, if implemented later
 folium
 streamlit-folium
-kafka-python # If you want to integrate with Kafka, otherwise it can be removed
-shodan # Already there
+shodan
 twilio
-watchdog # For monitoring file system changes locally, might not be needed for online
-scikit-learn # If you implement ML/NPL tasks locally
-opencv-python-headless # If you do image processing locally
-pyaudio # If you do local audio processing
-numpy
-vt-py # VirusTotal Python library
-gql # For GraphQL APIs, if needed
-newsapi-python # For breaking news feed
-pytz # For timezone handling in tickers
-cryptography # For encryption
-geopy # For geographical calculations (e.g., MGRS)
-# speech_recognition # For local STT (requires PyAudio, might be tricky for online deployment)
-# gtts # For Text-to-Speech (Google Text-to-Speech)
+vt-py
+newsapi-python
+pytz
+geopy
+edge-tts
+asyncio
