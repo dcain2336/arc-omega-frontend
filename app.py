@@ -1,115 +1,195 @@
-# app.py — ARC Mainframe (November 2025 — Working Silero TTS)
 import streamlit as st
-import torch
-import io
-import wave
-import os
-from datetime import datetime
+import google.generativeai as genai
+from openai import OpenAI
+from groq import Groq
+import requests
+import datetime
+import folium
+from streamlit_folium import st_folium
+from twilio.rest import Client as TwilioClient
+import shodan
 
-# -------------------------- Page Config --------------------------
-st.set_page_config(
-    page_title="ARC Mainframe",
-    page_icon="🧠",
-    layout="centered",
-    initial_sidebar_state="expanded"
-)
+# --- CONFIGURATION ---
+st.set_page_config(page_title="A.R.C. OMEGA", layout="wide", initial_sidebar_state="collapsed")
 
-# -------------------------- Title & Style --------------------------
+# --- CUSTOM CSS (THE HUD) ---
 st.markdown("""
 <style>
-    .big-title {font-size: 3.5rem !important; font-weight: bold; text-align: center; color: #00ffff;}
-    .subtitle {text-align: center; color: #00cccc; font-size: 1.3rem; margin-bottom: 30px;}
-    .response-box {background-color: #0a1a2f; padding: 20px; border-radius: 15px; border-left: 5px solid #00ffff; margin: 20px 0;}
-    .user-msg {background-color: #1a1a2e; padding: 12px; border-radius: 12px; margin: 10px 0;}
-    .arc-msg {background-color: #002233; padding: 15px; border-radius: 12px; border-left: 4px solid #00ffff; margin: 10px 0;}
+    .stApp { background-color: #0e1117; color: #00FF00; font-family: 'Courier New', monospace; }
+    .status-box { padding: 10px; border: 1px solid #333; margin-bottom: 10px; }
+    .online { color: #00FF00; font-weight: bold; }
+    .offline { color: #555; font-style: italic; }
+    .alert { color: #FF0000; animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1 class="big-title">ARC Mainframe</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Advanced Reasoning Core • November 2025</p>', unsafe_allow_html=True)
-
-# -------------------------- Silero TTS (FIXED 2025) --------------------------
-@st.cache_resource
-def load_silero_model():
-    # Direct model download (most reliable)
-    model_path = "silero_v3_en.pt"
-    if not os.path.exists(model_path):
-        torch.hub.download_url_to_file(
-            "https://models.silero.ai/models/tts/en/v3_en.pt",
-            model_path
-        )
-    model = torch.package.imread(model_path)
-    sample_rate = 48000
-    speaker = "en_99"  # Warm, clear, natural American English voice
-    return model, sample_rate, speaker
-
-def text_to_speech_silero(text: str) -> bytes:
+# --- UTILS: KEY CHECKER ---
+def get_key(name):
+    """Safely retrieve a key or return None."""
     try:
-        model, sample_rate, speaker = load_silero_model()
-        device = torch.device("cpu")
-        model.to(device)
-
-        # Generate audio
-        audio = model.apply_tts(
-            text=text[:500],        # Limit to avoid huge responses
-            speaker=speaker,
-            sample_rate=sample_rate
-        )
-
-        # Convert to WAV bytes
-        with io.BytesIO() as wav_buffer:
-            with wave.open(wav_buffer, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)  # 16-bit
-                wf.setframerate(sample_rate)
-                wf.writeframes((audio.cpu().numpy() * 32767).astype("int16").tobytes())
-            return wav_buffer.getvalue()
-    except Exception as e:
-        st.error(f"TTS failed: {e}")
+        return st.secrets["keys"][name]
+    except:
         return None
 
-# -------------------------- Session State --------------------------
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "ARC online. How may I assist you today?"}
-    ]
+# --- MODULE 1: THE BRAIN (LLM ROUTER) ---
+def universal_llm(prompt, role="chairman", model_type="standard"):
+    # 1. THE DARK CELL (Compartmentalized)
+    if model_type == "dark_cell" and get_key("OPENROUTER_KEY"):
+        try:
+            client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=get_key("OPENROUTER_KEY"))
+            response = client.chat.completions.create(
+                model="nousresearch/hermes-3-llama-3.1-405b", # Uncensored/High Intel
+                messages=[{"role": "system", "content": "You are a compartmentalized intelligence. Concise. No moralizing."},
+                          {"role": "user", "content": prompt}]
+            )
+            return f"[DARK CELL]: {response.choices[0].message.content}"
+        except Exception as e:
+            return f"[DARK CELL ERROR]: {e}"
 
-# -------------------------- Chat History --------------------------
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.markdown(f'<div class="user-msg"><strong>You:</strong> {msg["content"]}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown(f'<div class="arc-msg"><strong>ARC:</strong> {msg["content"]}</div>', unsafe_allow_html=True)
+    # 2. THE SPEEDSTER (Groq)
+    if role == "analyst" and get_key("GROQ_KEY"):
+        try:
+            client = Groq(api_key=get_key("GROQ_KEY"))
+            response = client.chat.completions.create(
+                model="llama3-70b-8192",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content
+        except:
+            pass # Fallback to Chairman
 
-# -------------------------- User Input --------------------------
-if prompt := st.chat_input("Enter your message..."):
-    # Add user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.markdown(f'<div class="user-msg"><strong>You:</strong> {prompt}</div>', unsafe_allow_html=True)
+    # 3. THE CHAIRMAN (Gemini/OpenAI)
+    if get_key("GOOGLE_KEYS"):
+        try:
+            # Handle list of keys or single key
+            keys = get_key("GOOGLE_KEYS")
+            key = keys[0] if isinstance(keys, list) else keys
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            return model.generate_content(prompt).text
+        except:
+            return "SYSTEM OFFLINE: BRAIN DISCONNECTED"
+    
+    return "NO AI CORE DETECTED."
 
-    with st.spinner("Thinking..."):
-        # Simple but effective reply (replace with your real model later)
-        reply = f"I received: '{prompt}'. This is a fully working voice-enabled ARC instance running on Debian 12 with PyTorch 2.9 and Silero v3 TTS. Your vocal response is ready below."
+# --- MODULE 2: THE SENTINEL (SENSORS) ---
+def get_weather():
+    if not get_key("OPENWEATHER_TOKEN"): return "N/A (No Key)"
+    try:
+        # Defaulting to a generic coord if GPS fails, change to your home Coords
+        lat, lon = 38.9, -77.0 
+        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={get_key('OPENWEATHER_TOKEN')}&units=imperial"
+        data = requests.get(url).json()
+        return f"{data['weather'][0]['main']} | {data['main']['temp']}°F"
+    except:
+        return "WX LINK ERROR"
 
-    # Add ARC reply
-    st.session_state.messages.append({"role": "assistant", "content": reply})
-    st.markdown(f'<div class="arc-msg"><strong>ARC:</strong> {reply}</div>', unsafe_allow_html=True)
+def check_shodan_ip(ip="8.8.8.8"):
+    if not get_key("SHODAN_TOKEN"): return "SHODAN OFFLINE"
+    try:
+        api = shodan.Shodan(get_key("SHODAN_TOKEN"))
+        host = api.host(ip)
+        return f"THREATS: {len(host.get('vulns', []))}"
+    except:
+        return "SECURE"
 
-    # -------------------------- Vocal Response --------------------------
-    if st.checkbox("Vocal Response", value=True):
-        with st.spinner("Speaking..."):
-            audio_bytes = text_to_speech_silero(reply)
-            if audio_bytes:
-                st.audio(audio_bytes, format="audio/wav", autoplay=True)
-                st.success("Voice delivered in real time • en_99 speaker")
-            else:
-                st.warning("Voice synthesis failed, but text response is complete.")
+def send_alert(message):
+    # Try Discord first
+    if get_key("DISCORD_TOKEN"):
+        # Placeholder for Discord Webhook logic
+        pass 
+    # Try Twilio SMS
+    if get_key("TWILIO_SID") and get_key("TWILIO_TOKEN"):
+        try:
+            client = TwilioClient(get_key("TWILIO_SID"), get_key("TWILIO_TOKEN"))
+            client.messages.create(
+                body=f"ARC ALERT: {message}",
+                from_=get_key("TWILIO_FROM"),
+                to=get_key("TWILIO_TO")
+            )
+            return "SMS SENT"
+        except:
+            pass
+    return "ALERT LOGGED LOCALLY"
 
-# -------------------------- Footer --------------------------
-st.markdown("---")
-st.markdown("""
-<p style='text-align:center; color:#008888; font-size:12px;'>
-    ARC Mainframe • Built on Debian 12 • PyTorch 2.9 • Silero TTS v3/v4 • November 2025<br>
-    <strong>Voice: en_99</strong> — Natural American English (one of the clearest & most human-like)
-</p>
-""", unsafe_allow_html=True)
+# --- UI LAYOUT ---
+
+# HEADER
+c1, c2 = st.columns([3, 1])
+with c1:
+    st.title("A.R.C. OMEGA // COMMAND")
+with c2:
+    st.metric("SYSTEM STATUS", "OPERATIONAL" if get_key("GOOGLE_KEYS") else "DEGRADED")
+
+# TABS
+tab_ops, tab_map, tab_dark, tab_intel = st.tabs(["COUNCIL OPS", "TACTICAL MAP", "DARK CELL", "INTEL STREAMS"])
+
+# TAB 1: COUNCIL OPS
+with tab_ops:
+    if "messages" not in st.session_state: st.session_state.messages = []
+    
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            
+    prompt = st.chat_input("Direct the Council...")
+    if prompt:
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"): st.markdown(prompt)
+        
+        with st.chat_message("assistant"):
+            with st.spinner("Council Convening..."):
+                response = universal_llm(prompt)
+                st.markdown(response)
+        st.session_state.messages.append({"role": "assistant", "content": response})
+
+# TAB 2: TACTICAL MAP (COP)
+with tab_map:
+    st.subheader("Common Operating Picture")
+    
+    # Map Setup
+    m = folium.Map(location=[38.9, -77.0], zoom_start=10, tiles="CartoDB dark_matter")
+    
+    # Layer: Weather (If Active)
+    if get_key("OPENWEATHER_TOKEN"):
+        folium.Marker(
+            [38.9, -77.0], 
+            popup=f"HQ STATUS: {get_weather()}",
+            icon=folium.Icon(color="green", icon="home")
+        ).add_to(m)
+        
+    # Layer: TomTom Traffic (Tiles)
+    if get_key("TOMTOM_TOKEN"):
+        # Overlay TomTom traffic tiles logic here
+        pass 
+        
+    st_folium(m, width=1200, height=500)
+
+# TAB 3: DARK CELL (COMPARTMENTALIZED)
+with tab_dark:
+    st.error("⚠️ RESTRICTED AREA: UNFILTERED MODELS")
+    st.caption("Accessing via OpenRouter / DeepSeek. No safety rails.")
+    
+    dc_prompt = st.text_area("Input for Dark Cell Agent:")
+    if st.button("EXECUTE DARK QUERY"):
+        with st.spinner("Decrypting..."):
+            dc_response = universal_llm(dc_prompt, model_type="dark_cell")
+            st.code(dc_response, language="markdown")
+
+# TAB 4: INTEL STREAMS
+with tab_intel:
+    c_a, c_b, c_c = st.columns(3)
+    with c_a:
+        st.write("**ATMOSPHERICS**")
+        st.info(get_weather())
+    with c_b:
+        st.write("**THREAT INTEL (SHODAN)**")
+        st.warning(check_shodan_ip("8.8.8.8")) # Example IP
+    with c_c:
+        st.write("**COMMS LINK**")
+        if get_key("DISCORD_TOKEN"): st.success("DISCORD: ONLINE")
+        else: st.write("DISCORD: OFFLINE")
+        if get_key("TWILIO_SID"): st.success("SMS: ARMED")
+        else: st.write("SMS: OFFLINE")
+
