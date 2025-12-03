@@ -126,18 +126,24 @@ def universal_llm(prompt, role="chairman", model_type="standard"):
         except:
             pass 
 
-    # 3. CHAIRMAN (Google)
+    # 3. CHAIRMAN (Google) - DEBUG MODE ENABLED
     if get_key("GOOGLE_KEYS"):
         try:
             keys = get_key("GOOGLE_KEYS")
-            key = keys[0] if isinstance(keys, list) else keys
+            # Handle list vs string key format safely
+            if isinstance(keys, list):
+                key = keys[0]
+            else:
+                key = keys
+            
             genai.configure(api_key=key)
             model = genai.GenerativeModel('gemini-1.5-flash')
             return model.generate_content(prompt).text
-        except:
-            return "SYSTEM OFFLINE: BRAIN DISCONNECTED"
+        except Exception as e:
+            # RETURN THE ACTUAL ERROR FOR DEBUGGING
+            return f"⚠️ **SYSTEM ERROR:** {str(e)}"
     
-    return "NO AI CORE DETECTED."
+    return "NO AI CORE DETECTED. CHECK secrets.toml"
 
 # --- MODULE 2: SENSORS ---
 def get_weather():
