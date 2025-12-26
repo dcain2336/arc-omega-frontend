@@ -1,0 +1,46 @@
+body {
+  margin: 0;
+  background: radial-gradient(circle at center, #00111a, #000);
+  color: #00ffff;
+  font-family: "Courier New", monospace;
+}
+
+#hud {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+}
+
+header, footer {
+  padding: 10px;
+  border-bottom: 1px solid #00ffff33;
+}
+
+header h1 {
+  margin: 0;
+  display: inline-block;
+}
+
+.status.online {
+  float: right;
+  color: #00ff99;
+}
+
+.panel {
+  padding: 15px;
+  border: 1px solid #00ffff22;
+}
+
+.left {
+  position: absolute;
+  left: 10px;
+  top: 80px;
+  width: 25%;
+}
+
+.right {
+  position: absolute;
+  right: 10px;
+  top: 80px;
+  width: 30%;
+}
