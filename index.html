@@ -3,19 +3,34 @@
 <head>
   <meta charset="UTF-8">
   <title>ARC OMEGA COMMAND</title>
-  <style>
-    body {
-      background: black;
-      color: #00ffff;
-      font-family: monospace;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-    }
-  </style>
+  <link rel="stylesheet" href="hud.css">
 </head>
 <body>
-  <h1>ARC OMEGA COMMAND — ONLINE</h1>
+  <div id="hud">
+    <header>
+      <h1>ARC OMEGA</h1>
+      <span class="status online">ONLINE</span>
+    </header>
+
+    <section class="panel left">
+      <h2>SYSTEMS</h2>
+      <ul>
+        <li>AI Council: Active</li>
+        <li>Data Feeds: Connected</li>
+        <li>Backend: Standing By</li>
+      </ul>
+    </section>
+
+    <section class="panel right">
+      <h2>LIVE TELEMETRY</h2>
+      <div id="telemetry">Awaiting data…</div>
+    </section>
+
+    <footer>
+      <span>SECURE • ZERO TRUST • CLOUDFLARE</span>
+    </footer>
+  </div>
+
+  <script src="hud.js"></script>
 </body>
 </html>
