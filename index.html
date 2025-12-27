@@ -1,36 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>ARC OMEGA COMMAND</title>
-  <link rel="stylesheet" href="hud.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/styles.css" />
+  <title></title>
 </head>
 <body>
-  <div id="hud">
-    <header>
-      <h1>ARC OMEGA</h1>
-      <span class="status online">ONLINE</span>
-    </header>
 
-    <section class="panel left">
-      <h2>SYSTEMS</h2>
-      <ul>
-        <li>AI Council: Active</li>
-        <li>Data Feeds: Connected</li>
-        <li>Backend: Standing By</li>
-      </ul>
-    </section>
-
-    <section class="panel right">
-      <h2>LIVE TELEMETRY</h2>
-      <div id="telemetry">Awaiting data…</div>
-    </section>
-
-    <footer>
-      <span>SECURE • ZERO TRUST • CLOUDFLARE</span>
-    </footer>
+  <div class="gate">
+    <input
+      type="text"
+      class="gate-input"
+      autocomplete="off"
+      spellcheck="false"
+      autofocus
+      required
+    />
+    <button class="gate-btn">→</button>
   </div>
 
-  <script src="hud.js"></script>
+  <script src="/gate.js"></script>
 </body>
 </html>
