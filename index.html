@@ -1,25 +1,24 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="/styles.css" />
-  <title></title>
+  <title> </title>
+  <link rel="stylesheet" href="/hud.css" />
 </head>
 <body>
+  <main class="wrap">
+    <form id="gate" class="gate" autocomplete="off">
+      <input id="pw" class="pw" type="password"
+             inputmode="text"
+             placeholder="••••••••"
+             aria-label="password"
+             autofocus />
+      <button class="go" type="submit">↵</button>
+      <div id="msg" class="msg" role="alert"></div>
+    </form>
+  </main>
 
-  <div class="gate">
-    <input
-      type="text"
-      class="gate-input"
-      autocomplete="off"
-      spellcheck="false"
-      autofocus
-      required
-    />
-    <button class="gate-btn">→</button>
-  </div>
-
-  <script src="/gate.js"></script>
+  <script src="/hud.js"></script>
 </body>
 </html>
