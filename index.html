@@ -1,24 +1,197 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title> </title>
-  <link rel="stylesheet" href="/hud.css" />
+  <style>
+    :root { --bg:#070b12; --fg:#cfe7ff; --muted:#6f86a3; --accent:#45d6ff; --bad:#ff4d6d; }
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;}
+    .wrap{min-height:100%; display:flex; align-items:flex-start; justify-content:center; padding:48px 16px;}
+    .card{width:100%; max-width:420px; }
+    .row{margin:14px 0;}
+    input,button{
+      width:100%; box-sizing:border-box; border-radius:14px; border:1px solid rgba(69,214,255,.22);
+      background:rgba(255,255,255,.03); color:var(--fg); padding:14px 14px; font-size:16px;
+      outline:none;
+    }
+    input:focus{border-color:rgba(69,214,255,.65); box-shadow:0 0 0 3px rgba(69,214,255,.12);}
+    button{
+      cursor:pointer; border-color:rgba(69,214,255,.45); background:rgba(69,214,255,.10);
+    }
+    button:hover{background:rgba(69,214,255,.15);}
+    .hint{color:var(--muted); font-size:13px; margin-top:6px;}
+    .err{color:var(--bad); font-size:13px; margin-top:10px; white-space:pre-wrap;}
+    .ok{color:var(--accent); font-size:13px; margin-top:10px; white-space:pre-wrap;}
+    .hidden{display:none;}
+    label{display:block; font-size:13px; color:var(--muted); margin:10px 0 6px;}
+  </style>
 </head>
 <body>
-  <main class="wrap">
-    <form id="gate" class="gate" autocomplete="off">
-      <input id="pw" class="pw" type="password"
-             inputmode="text"
-             placeholder="••••••••"
-             aria-label="password"
-             autofocus />
-      <button class="go" type="submit">↵</button>
-      <div id="msg" class="msg" role="alert"></div>
-    </form>
-  </main>
+  <div class="wrap">
+    <div class="card">
+      <!-- STEP 1: EMAIL -->
+      <div id="stepEmail">
+        <div class="row">
+          <input id="email" type="email" autocomplete="email" placeholder="Email" />
+          <div class="hint"> </div>
+        </div>
+        <div class="row">
+          <button id="btnEmail">Continue</button>
+        </div>
+      </div>
 
-  <script src="/hud.js"></script>
+      <!-- STEP 2: CODE -->
+      <div id="stepCode" class="hidden">
+        <div class="row">
+          <input id="code" inputmode="numeric" maxlength="6" placeholder="Code" />
+          <div class="hint"> </div>
+        </div>
+        <div class="row">
+          <button id="btnCode">Continue</button>
+        </div>
+        <div class="row">
+          <button id="btnRestart" style="border-color:rgba(255,255,255,.12)">Start over</button>
+        </div>
+      </div>
+
+      <!-- STEP 3: USER/PASS -->
+      <div id="stepLogin" class="hidden">
+        <label for="username">Username</label>
+        <input id="username" autocomplete="username" placeholder="Username" />
+
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="Password" />
+
+        <div class="row">
+          <button id="btnLogin">Sign in</button>
+          <div class="hint" id="attemptHint"></div>
+        </div>
+      </div>
+
+      <div id="msgErr" class="err hidden"></div>
+      <div id="msgOk" class="ok hidden"></div>
+    </div>
+  </div>
+
+<script>
+  // ✅ Set this to your Worker
+  const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
+
+  const els = {
+    stepEmail: document.getElementById("stepEmail"),
+    stepCode: document.getElementById("stepCode"),
+    stepLogin: document.getElementById("stepLogin"),
+    email: document.getElementById("email"),
+    code: document.getElementById("code"),
+    username: document.getElementById("username"),
+    password: document.getElementById("password"),
+    btnEmail: document.getElementById("btnEmail"),
+    btnCode: document.getElementById("btnCode"),
+    btnLogin: document.getElementById("btnLogin"),
+    btnRestart: document.getElementById("btnRestart"),
+    msgErr: document.getElementById("msgErr"),
+    msgOk: document.getElementById("msgOk"),
+    attemptHint: document.getElementById("attemptHint"),
+  };
+
+  let state = {
+    email: "",
+    challengeToken: "",
+  };
+
+  function showErr(t){ els.msgOk.classList.add("hidden"); els.msgErr.textContent=t; els.msgErr.classList.remove("hidden"); }
+  function showOk(t){ els.msgErr.classList.add("hidden"); els.msgOk.textContent=t; els.msgOk.classList.remove("hidden"); }
+  function clearMsg(){ els.msgErr.classList.add("hidden"); els.msgOk.classList.add("hidden"); }
+
+  function setStep(which){
+    els.stepEmail.classList.toggle("hidden", which !== "email");
+    els.stepCode.classList.toggle("hidden", which !== "code");
+    els.stepLogin.classList.toggle("hidden", which !== "login");
+    clearMsg();
+  }
+
+  async function post(path, body){
+    const r = await fetch(API_BASE + path, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body),
+    });
+    const txt = await r.text();
+    let data;
+    try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+    return { ok: r.ok, status: r.status, data };
+  }
+
+  els.btnEmail.onclick = async () => {
+    clearMsg();
+    const email = (els.email.value || "").trim();
+    if(!email.includes("@")) return showErr(" ");
+    els.btnEmail.disabled = true;
+    const res = await post("/auth", { action:"start", email });
+    els.btnEmail.disabled = false;
+
+    if(!res.ok) return showErr(" ");
+    state.email = email;
+    setStep("code");
+    els.code.focus();
+  };
+
+  els.btnCode.onclick = async () => {
+    clearMsg();
+    const code = (els.code.value || "").trim();
+    if(code.length < 4) return showErr(" ");
+    els.btnCode.disabled = true;
+    const res = await post("/auth", { action:"verify", email: state.email, code });
+    els.btnCode.disabled = false;
+
+    if(!res.ok) return showErr(" ");
+    state.challengeToken = res.data.challenge_token || "";
+    if(!state.challengeToken) return showErr(" ");
+    setStep("login");
+    els.username.focus();
+  };
+
+  els.btnLogin.onclick = async () => {
+    clearMsg();
+    const username = (els.username.value || "").trim();
+    const password = (els.password.value || "");
+    if(!username || !password) return showErr(" ");
+
+    els.btnLogin.disabled = true;
+    const res = await post("/auth", {
+      action: "login",
+      email: state.email,
+      challenge_token: state.challengeToken,
+      username, password
+    });
+    els.btnLogin.disabled = false;
+
+    if(res.ok){
+      showOk("OK");
+      // optional: redirect to your real app route if you want
+      // window.location.href = "/app.html";
+      return;
+    }
+
+    // If 3rd wrong attempt, server will tell us to reset
+    if(res.data && res.data.reset === true){
+      // full reset: redo email+code cycle
+      window.location.reload();
+      return;
+    }
+
+    // show remaining attempts if provided
+    if(res.data && typeof res.data.remaining === "number"){
+      els.attemptHint.textContent = `Attempts remaining: ${res.data.remaining}`;
+    }
+    showErr(" ");
+  };
+
+  els.btnRestart.onclick = () => window.location.reload();
+
+  // start on email step
+  setStep("email");
+</script>
 </body>
 </html>
