@@ -1,24 +1,166 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ARC HUD</title>
-  <link rel="stylesheet" href="hud.css" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>ARC</title>
+  <link rel="stylesheet" href="./hud.css" />
 </head>
+
 <body>
-  <div class="wrap">
-    <div class="pill">Frontend: <span id="front"></span></div>
-    <div class="pill">API: <span id="api"></span></div>
-    <div class="pill">HF: <span id="hf"></span></div>
-
-    <textarea id="prompt" class="box" rows="6">ping</textarea>
-
-    <button id="send" class="btn">Send</button>
-
-    <pre id="out" class="out">(no response yet)</pre>
+  <!-- BLACKOUT OVERLAY -->
+  <div id="blackout" class="blackout hidden" aria-hidden="true">
+    <div class="blackout__hint">BLACKOUT</div>
   </div>
 
-  <script src="hud.js"></script>
+  <!-- TOP HUD -->
+  <header class="topbar">
+    <button id="btnLeft" class="iconbtn" title="Menu" aria-label="Menu">☰</button>
+
+    <div class="status">
+      <span id="statusDot" class="dot"></span>
+      <span id="statusText" class="status__text">ONLINE</span>
+    </div>
+
+    <div class="topbar__right">
+      <button id="btnBlackout" class="iconbtn" title="Blackout" aria-label="Blackout">⬛</button>
+      <button id="btnTheme" class="iconbtn" title="Theme" aria-label="Theme">☾</button>
+      <button id="btnRight" class="iconbtn" title="Tools" aria-label="Tools">⚙︎</button>
+    </div>
+  </header>
+
+  <!-- LEFT PANEL (Sessions / Files placeholder for Phase 1) -->
+  <aside id="leftPanel" class="panel panel--left hidden" aria-hidden="true">
+    <div class="panel__head">
+      <div class="panel__title">ARCHIVE</div>
+      <button id="btnLeftClose" class="iconbtn">✕</button>
+    </div>
+    <div class="panel__body">
+      <div class="panel__section">
+        <div class="panel__label">Sessions</div>
+        <div class="panel__note">(Phase 2: persistent sessions)</div>
+      </div>
+      <div class="panel__section">
+        <div class="panel__label">Files</div>
+        <div class="panel__note">(Phase 3: generated + uploaded files)</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- RIGHT PANEL (Tools placeholder for Phase 1) -->
+  <aside id="rightPanel" class="panel panel--right hidden" aria-hidden="true">
+    <div class="panel__head">
+      <div class="panel__title">TOOLS</div>
+      <button id="btnRightClose" class="iconbtn">✕</button>
+    </div>
+
+    <div class="panel__body">
+      <div class="panel__section">
+        <div class="panel__label">Quick</div>
+        <button id="btnPing" class="toolbtn">Ping</button>
+        <button id="btnClear" class="toolbtn toolbtn--ghost">Clear Chat</button>
+      </div>
+
+      <div class="panel__section">
+        <div class="panel__label">Info</div>
+        <div class="panel__note">
+          Worker: <span id="apiLabel" class="mono"></span><br/>
+          HF Space: <span id="hfLabel" class="mono"></span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <!-- ARC ORB -->
+    <section class="orbWrap" aria-label="ARC Core">
+      <div id="orb" class="orb orb--idle" role="img" aria-label="ARC Core Orb">
+        <!-- Inline SVG “reactor” style core (crisp + scalable) -->
+        <svg class="orb__svg" viewBox="0 0 200 200" aria-hidden="true">
+          <defs>
+            <radialGradient id="g1" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="rgba(120,240,255,1)"/>
+              <stop offset="45%" stop-color="rgba(60,190,255,.95)"/>
+              <stop offset="100%" stop-color="rgba(10,20,35,0)"/>
+            </radialGradient>
+
+            <radialGradient id="g2" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="rgba(0,229,255,.35)"/>
+              <stop offset="100%" stop-color="rgba(0,229,255,0)"/>
+            </radialGradient>
+
+            <filter id="bloom" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+
+          <!-- outer glow -->
+          <circle cx="100" cy="100" r="92" fill="url(#g2)"/>
+
+          <!-- segmented ring -->
+          <g filter="url(#bloom)" opacity="0.9">
+            <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(70,220,255,.35)" stroke-width="10"/>
+            <!-- ring cuts -->
+            <g stroke="rgba(7,11,18,1)" stroke-width="14">
+              <line x1="100" y1="14" x2="100" y2="34"/>
+              <line x1="100" y1="166" x2="100" y2="186"/>
+              <line x1="14" y1="100" x2="34" y2="100"/>
+              <line x1="166" y1="100" x2="186" y2="100"/>
+              <line x1="38" y1="38" x2="54" y2="54"/>
+              <line x1="146" y1="146" x2="162" y2="162"/>
+              <line x1="38" y1="162" x2="54" y2="146"/>
+              <line x1="146" y1="54" x2="162" y2="38"/>
+            </g>
+          </g>
+
+          <!-- core -->
+          <circle cx="100" cy="100" r="68" fill="rgba(7,11,18,.55)" stroke="rgba(0,229,255,.25)" stroke-width="2"/>
+          <circle cx="100" cy="100" r="60" fill="url(#g1)" opacity="0.95"/>
+
+          <!-- triangle + braces -->
+          <g filter="url(#bloom)">
+            <path d="M100 55 L140 130 L60 130 Z" fill="rgba(7,11,18,.55)" stroke="rgba(0,229,255,.55)" stroke-width="3" />
+            <path d="M100 72 L122 120 L78 120 Z" fill="rgba(0,229,255,.18)" />
+            <path d="M60 130 L75 155" stroke="rgba(0,229,255,.45)" stroke-width="6" stroke-linecap="round"/>
+            <path d="M140 130 L125 155" stroke="rgba(0,229,255,.45)" stroke-width="6" stroke-linecap="round"/>
+            <path d="M78 120 L100 155 L122 120" fill="none" stroke="rgba(0,229,255,.35)" stroke-width="4" stroke-linejoin="round"/>
+          </g>
+        </svg>
+      </div>
+
+      <div class="orbCaption">
+        <div class="pill mono" id="frontLabel"></div>
+        <div class="pill mono" id="apiPill"></div>
+        <div class="pill mono" id="hfPill"></div>
+      </div>
+    </section>
+
+    <!-- CHAT -->
+    <section class="chat">
+      <div id="chatLog" class="chat__log" aria-live="polite"></div>
+
+      <!-- INPUT -->
+      <div class="chat__composer">
+        <textarea id="prompt" class="chat__input" rows="2" placeholder="Message ARC…"></textarea>
+        <button id="send" class="chat__send">Send</button>
+      </div>
+
+      <!-- TICKERS (Phase 1 placeholders) -->
+      <div class="tickers">
+        <div class="ticker">Weather: (Phase 2)</div>
+        <div class="ticker">News: (Phase 2)</div>
+        <div class="ticker">Crypto/Stocks: (Phase 2)</div>
+        <div class="ticker">World Time: (Phase 2)</div>
+        <div class="ticker">Globe: (Phase 2)</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./hud.js"></script>
 </body>
 </html>
