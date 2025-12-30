@@ -3,36 +3,57 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title></title>
+  <title>ARC OMEGA</title>
   <style>
-    :root { --bg:#070b12; --fg:#cfe7ff; --accent:#45d6ff; }
+    :root { --bg:#070b12; --fg:#cfe7ff; --muted:#6f86a3; --accent:#45d6ff; --bad:#ff4d6d; }
     html,body{height:100%; margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;}
-    .wrap{min-height:100%; display:flex; align-items:center; justify-content:center; padding:48px 16px;}
-    .card{width:100%; max-width:420px;}
-    button{
-      width:100%; box-sizing:border-box; border-radius:14px;
-      border:1px solid rgba(69,214,255,.45);
-      background:rgba(69,214,255,.10);
-      color:var(--fg); padding:14px 14px; font-size:16px;
-      cursor:pointer;
+    .wrap{min-height:100%; display:flex; align-items:flex-start; justify-content:center; padding:48px 16px;}
+    .card{width:100%; max-width:720px;}
+    .row{margin:14px 0;}
+    textarea,input,button{
+      width:100%; box-sizing:border-box; border-radius:14px; border:1px solid rgba(69,214,255,.22);
+      background:rgba(255,255,255,.03); color:var(--fg); padding:14px 14px; font-size:16px;
+      outline:none;
     }
+    textarea{min-height:130px; resize:vertical;}
+    input:focus,textarea:focus{border-color:rgba(69,214,255,.65); box-shadow:0 0 0 3px rgba(69,214,255,.12);}
+    button{cursor:pointer; border-color:rgba(69,214,255,.45); background:rgba(69,214,255,.10);}
+    button:hover{background:rgba(69,214,255,.15);}
+    .hint{color:var(--muted); font-size:13px; margin-top:6px;}
+    .err{color:var(--bad); font-size:13px; margin-top:10px; white-space:pre-wrap;}
+    .ok{color:var(--accent); font-size:13px; margin-top:10px; white-space:pre-wrap;}
+    .topline{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+    .pill{padding:6px 10px; border:1px solid rgba(69,214,255,.25); border-radius:999px; font-size:12px; color:var(--muted);}
+    pre{white-space:pre-wrap; word-break:break-word; background:rgba(255,255,255,.04); border:1px solid rgba(69,214,255,.18); padding:12px; border-radius:14px;}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card">
-      <button id="go">Continue</button>
+      <div class="topline">
+        <div class="pill">Frontend: arc-omega-frontend.pages.dev</div>
+        <div class="pill" id="apiPill">API: (loading...)</div>
+        <div class="pill" id="hfPill">HF: (loading...)</div>
+      </div>
+
+      <div class="row">
+        <textarea id="prompt" placeholder="Type a prompt...">ping</textarea>
+        <div class="hint">This sends POST /query to your Cloudflare Worker, which forwards to your private HF Space.</div>
+      </div>
+
+      <div class="row">
+        <button id="sendBtn">Send</button>
+      </div>
+
+      <div id="msgErr" class="err" style="display:none;"></div>
+      <div id="msgOk" class="ok" style="display:none;"></div>
+
+      <div class="row">
+        <pre id="out">(no response yet)</pre>
+      </div>
     </div>
   </div>
 
-  <script>
-    // Change this if your app page is different:
-    const TARGET = "/command.html";
-    document.getElementById("go").addEventListener("click", (e) => {
-      e.preventDefault();
-      window.location.href = TARGET;
-    });
-    setTimeout(() => window.location.href = TARGET, 250);
-  </script>
+  <script src="./hud.js"></script>
 </body>
 </html>
