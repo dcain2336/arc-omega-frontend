@@ -1,57 +1,62 @@
-// hud.js (DROP-IN)
-const API_BASE = "https://arc-omega-api.dcain1.workers.dev"; // your worker
+const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
 
-const pillApi = document.getElementById("pillApi");
-const pillHf = document.getElementById("pillHf");
-const promptEl = document.getElementById("prompt");
-const out = document.getElementById("out");
-const sendBtn = document.getElementById("send");
+const elPrompt = document.getElementById("prompt");
+const elOut = document.getElementById("out");
+const elBtn = document.getElementById("sendBtn");
+const elHf = document.getElementById("hfPill");
 
-async function loadTest() {
-  try {
-    const r = await fetch(`${API_BASE}/test`, { method: "GET" });
-    const data = await r.json();
-    pillApi.textContent = `API: ${API_BASE}`;
-    pillHf.textContent = `HF: ${data.hf_space || "(unknown)"}`;
-  } catch (e) {
-    pillApi.textContent = `API: ${API_BASE}`;
-    pillHf.textContent = `HF: (test failed)`;
-  }
+function show(text) {
+  elOut.textContent = text;
 }
 
-async function sendPrompt() {
-  const prompt = (promptEl.value || "").trim();
+async function api(path, body) {
+  const r = await fetch(API_BASE + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+
+  const txt = await r.text();
+  let data;
+  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+  return { ok: r.ok, status: r.status, data };
+}
+
+// check worker -> hf wiring
+(async () => {
+  try {
+    const r = await fetch(API_BASE + "/test");
+    const j = await r.json();
+    elHf.textContent = `HF: ${j.hf_space || "(unknown)"}`;
+  } catch (e) {
+    elHf.textContent = "HF: (test failed)";
+  }
+})();
+
+elBtn.addEventListener("click", async () => {
+  const prompt = (elPrompt.value || "").trim();
   if (!prompt) return;
 
-  out.textContent = "(sending...)";
-  sendBtn.disabled = true;
+  elBtn.disabled = true;
+  show("Sending…");
 
   try {
-    const r = await fetch(`${API_BASE}/query`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, user_id: "web" }),
-    });
+    const res = await api("/query", { prompt, user_id: "web" });
 
-    const text = await r.text();
-    if (!r.ok) {
-      out.innerHTML = `Error ${r.status}: <span class="err">${text}</span>`;
-      sendBtn.disabled = false;
+    if (!res.ok) {
+      show(`Error ${res.status}:\n` + JSON.stringify(res.data, null, 2));
       return;
     }
 
-    // show pretty JSON if possible
-    try {
-      out.textContent = JSON.stringify(JSON.parse(text), null, 2);
-    } catch {
-      out.textContent = text;
+    // display response
+    if (res.data && typeof res.data === "object") {
+      show(JSON.stringify(res.data, null, 2));
+    } else {
+      show(String(res.data));
     }
-  } catch (e) {
-    out.innerHTML = `<span class="err">NETWORK ERROR:</span> ${String(e)}`;
+  } catch (err) {
+    show("NETWORK ERROR:\n" + String(err));
   } finally {
-    sendBtn.disabled = false;
+    elBtn.disabled = false;
   }
-}
-
-sendBtn.addEventListener("click", sendPrompt);
-loadTest();
+});
