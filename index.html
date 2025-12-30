@@ -53,7 +53,7 @@
     <div class="panel__foot mono">ARC • COMMAND CENTER</div>
   </aside>
 
-  <!-- RIGHT: Tools panel (collapsing, not baked into page) -->
+  <!-- RIGHT: Tools panel -->
   <aside class="panel panel--right" id="toolspanel" aria-hidden="true">
     <div class="panel__head">
       <div class="mono panel__title">TOOLS</div>
@@ -87,10 +87,17 @@
       </div>
 
       <div class="reactorWrap">
+        <!-- Geometry notes:
+             - Outer ring radius: 128 at (160,160)
+             - Big triangle vertices are ON the circle (perfect fit):
+                 A (top-left)  = (70, 70)
+                 B (top-right) = (250, 70)
+                 C (bottom)    = (160, 288)
+           -->
         <svg viewBox="0 0 320 320" class="reactor" aria-hidden="true">
           <defs>
-            <!-- core cyan glow -->
-            <radialGradient id="cyanCore" cx="50%" cy="45%" r="60%">
+            <!-- glow aura -->
+            <radialGradient id="cyanCore" cx="50%" cy="45%" r="62%">
               <stop offset="0%"  stop-color="rgba(0,229,255,1)"/>
               <stop offset="40%" stop-color="rgba(0,229,255,.85)"/>
               <stop offset="72%" stop-color="rgba(0,229,255,.35)"/>
@@ -98,9 +105,9 @@
             </radialGradient>
 
             <!-- solid cyan base -->
-            <radialGradient id="cyanDisk" cx="50%" cy="45%" r="80%">
+            <radialGradient id="cyanDisk" cx="50%" cy="45%" r="85%">
               <stop offset="0%"  stop-color="rgba(0,229,255,.98)"/>
-              <stop offset="55%" stop-color="rgba(0,229,255,.88)"/>
+              <stop offset="55%" stop-color="rgba(0,229,255,.90)"/>
               <stop offset="100%" stop-color="rgba(0,229,255,.72)"/>
             </radialGradient>
 
@@ -120,7 +127,7 @@
             </filter>
 
             <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="2.2" result="b"/>
+              <feGaussianBlur stdDeviation="1.6" result="b"/>
               <feMerge>
                 <feMergeNode in="b"/>
                 <feMergeNode in="SourceGraphic"/>
@@ -128,103 +135,68 @@
             </filter>
           </defs>
 
-          <!-- glow aura -->
+          <!-- cyan aura -->
           <circle cx="160" cy="160" r="128" fill="url(#cyanCore)" filter="url(#glow)"/>
 
           <!-- SOLID CYAN DISK -->
           <circle cx="160" cy="160" r="108" fill="url(#cyanDisk)"/>
 
-          <!-- OUTER GUNMETAL RING (bordering edge) -->
+          <!-- OUTER GUNMETAL RING -->
           <circle cx="160" cy="160" r="128" fill="none" stroke="url(#gunmetal)" stroke-width="18"/>
 
-          <!-- subtle inner ring -->
-          <circle cx="160" cy="160" r="114" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2"/>
+          <!-- inner subtle ring -->
+          <circle cx="160" cy="160" r="114" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="2"/>
 
-          <!-- ===== TRIANGLES (both point DOWN) ===== -->
-          <!-- Large triangle vertices ON the ring-ish -->
-          <!-- Points: top-left, top-right, bottom -->
-          <!-- Adjusted to sit near the border -->
+          <!-- ===== TRIANGLES + CONNECTORS ===== -->
           <g filter="url(#soft)">
-            <!-- large triangle outline (black/gunmetal stroke) -->
+
+            <!-- BIG TRIANGLE (solid gunmetal stroke) -->
             <path id="triBig"
-              d="M 72 110 L 248 110 L 160 270 Z"
+              d="M 70 70 L 250 70 L 160 288 Z"
               fill="none"
-              stroke="rgba(6,8,10,.95)"
+              stroke="rgba(6,8,10,.98)"
               stroke-width="14"
               stroke-linejoin="round"/>
 
-            <!-- thin cyan edge highlight -->
-            <path
-              d="M 72 110 L 248 110 L 160 270 Z"
-              fill="none"
-              stroke="rgba(0,229,255,.28)"
-              stroke-width="3"
-              stroke-linejoin="round"/>
-
-            <!-- Smaller triangle centered, points aligned toward big triangle points -->
+            <!-- SMALL TRIANGLE (centered inside big one)
+                 Vertices are on lines from center towards big vertices,
+                 so they align with A,B,C directions and feel “locked in”.
+                 A'=(126,126) B'=(194,126) C'=(160,206)
+            -->
             <path id="triSmall"
-              d="M 110 150 L 210 150 L 160 235 Z"
+              d="M 126 126 L 194 126 L 160 206 Z"
               fill="none"
-              stroke="rgba(6,8,10,.95)"
+              stroke="rgba(6,8,10,.98)"
               stroke-width="12"
               stroke-linejoin="round"/>
 
-            <path
-              d="M 110 150 L 210 150 L 160 235 Z"
-              fill="none"
-              stroke="rgba(0,229,255,.20)"
-              stroke-width="2.5"
-              stroke-linejoin="round"/>
-
-            <!-- Side struts: two lines along each side that connect triangle sides to ring -->
-            <!-- Left side struts -->
+            <!-- CONNECTORS: small triangle vertices -> big triangle corners -->
             <g stroke-linecap="round">
-              <line x1="104" y1="162" x2="46" y2="192"
-                    stroke="rgba(6,8,10,.92)" stroke-width="10"/>
-              <line x1="104" y1="162" x2="46" y2="192"
-                    stroke="rgba(0,229,255,.16)" stroke-width="2.5"/>
-
-              <line x1="124" y1="198" x2="58" y2="232"
-                    stroke="rgba(6,8,10,.92)" stroke-width="10"/>
-              <line x1="124" y1="198" x2="58" y2="232"
-                    stroke="rgba(0,229,255,.16)" stroke-width="2.5"/>
+              <line x1="126" y1="126" x2="70"  y2="70"  stroke="rgba(6,8,10,.98)" stroke-width="10"/>
+              <line x1="194" y1="126" x2="250" y2="70"  stroke="rgba(6,8,10,.98)" stroke-width="10"/>
+              <line x1="160" y1="206" x2="160" y2="288" stroke="rgba(6,8,10,.98)" stroke-width="10"/>
             </g>
 
-            <!-- Right side struts -->
-            <g stroke-linecap="round">
-              <line x1="216" y1="162" x2="274" y2="192"
-                    stroke="rgba(6,8,10,.92)" stroke-width="10"/>
-              <line x1="216" y1="162" x2="274" y2="192"
-                    stroke="rgba(0,229,255,.16)" stroke-width="2.5"/>
-
-              <line x1="196" y1="198" x2="262" y2="232"
-                    stroke="rgba(6,8,10,.92)" stroke-width="10"/>
-              <line x1="196" y1="198" x2="262" y2="232"
-                    stroke="rgba(0,229,255,.16)" stroke-width="2.5"/>
+            <!-- SIDE STRUTS: two lines per side connecting big triangle sides to circle border -->
+            <!-- Left side (A->C). Struts go outward to ring (approx points on circle). -->
+            <g stroke-linecap="round" stroke="rgba(6,8,10,.98)" stroke-width="10">
+              <line x1="114" y1="160" x2="56"  y2="192"/>
+              <line x1="134" y1="210" x2="68"  y2="242"/>
             </g>
 
-            <!-- Corner attachments to border (from big triangle top corners to ring edge) -->
-            <g stroke-linecap="round">
-              <line x1="72" y1="110" x2="54" y2="96"
-                    stroke="rgba(6,8,10,.95)" stroke-width="12"/>
-              <line x1="72" y1="110" x2="54" y2="96"
-                    stroke="rgba(0,229,255,.18)" stroke-width="3"/>
+            <!-- Right side (B->C) -->
+            <g stroke-linecap="round" stroke="rgba(6,8,10,.98)" stroke-width="10">
+              <line x1="206" y1="160" x2="264" y2="192"/>
+              <line x1="186" y1="210" x2="252" y2="242"/>
+            </g>
 
-              <line x1="248" y1="110" x2="266" y2="96"
-                    stroke="rgba(6,8,10,.95)" stroke-width="12"/>
-              <line x1="248" y1="110" x2="266" y2="96"
-                    stroke="rgba(0,229,255,.18)" stroke-width="3"/>
-
-              <line x1="160" y1="270" x2="160" y2="292"
-                    stroke="rgba(6,8,10,.95)" stroke-width="12"/>
-              <line x1="160" y1="270" x2="160" y2="292"
-                    stroke="rgba(0,229,255,.18)" stroke-width="3"/>
+            <!-- CORNER “LOCK” INTO RING: short stubs so corners visibly attach to the border -->
+            <g stroke-linecap="round" stroke="rgba(6,8,10,.98)" stroke-width="12">
+              <line x1="70"  y1="70"  x2="54"  y2="54"/>
+              <line x1="250" y1="70"  x2="266" y2="54"/>
+              <line x1="160" y1="288" x2="160" y2="306"/>
             </g>
           </g>
-
-          <!-- center dot -->
-          <circle cx="160" cy="160" r="6" fill="rgba(0,0,0,.85)"/>
-          <circle cx="160" cy="160" r="14" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2"/>
         </svg>
       </div>
 
