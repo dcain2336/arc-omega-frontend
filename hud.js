@@ -1,62 +1,31 @@
+const FRONTEND = "arc-omega-frontend.pages.dev";
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
+const HF = "https://dsc2336-arc-omega-backend.hf.space";
 
-const elPrompt = document.getElementById("prompt");
-const elOut = document.getElementById("out");
-const elBtn = document.getElementById("sendBtn");
-const elHf = document.getElementById("hfPill");
+document.getElementById("front").textContent = FRONTEND;
+document.getElementById("api").textContent = API_BASE;
+document.getElementById("hf").textContent = HF;
 
-function show(text) {
-  elOut.textContent = text;
-}
+const out = document.getElementById("out");
+const btn = document.getElementById("send");
+const promptEl = document.getElementById("prompt");
 
-async function api(path, body) {
-  const r = await fetch(API_BASE + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body || {}),
-  });
+btn.addEventListener("click", async () => {
+  out.textContent = "Sending...";
+  btn.disabled = true;
 
-  const txt = await r.text();
-  let data;
-  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
-  return { ok: r.ok, status: r.status, data };
-}
-
-// check worker -> hf wiring
-(async () => {
   try {
-    const r = await fetch(API_BASE + "/test");
-    const j = await r.json();
-    elHf.textContent = `HF: ${j.hf_space || "(unknown)"}`;
+    const res = await fetch(`${API_BASE}/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: (promptEl.value || "").trim(), user_id: "web" }),
+    });
+
+    const txt = await res.text();
+    out.textContent = `HTTP ${res.status}\n\n${txt}`;
   } catch (e) {
-    elHf.textContent = "HF: (test failed)";
-  }
-})();
-
-elBtn.addEventListener("click", async () => {
-  const prompt = (elPrompt.value || "").trim();
-  if (!prompt) return;
-
-  elBtn.disabled = true;
-  show("Sending…");
-
-  try {
-    const res = await api("/query", { prompt, user_id: "web" });
-
-    if (!res.ok) {
-      show(`Error ${res.status}:\n` + JSON.stringify(res.data, null, 2));
-      return;
-    }
-
-    // display response
-    if (res.data && typeof res.data === "object") {
-      show(JSON.stringify(res.data, null, 2));
-    } else {
-      show(String(res.data));
-    }
-  } catch (err) {
-    show("NETWORK ERROR:\n" + String(err));
+    out.textContent = `NETWORK ERROR: ${String(e)}`;
   } finally {
-    elBtn.disabled = false;
+    btn.disabled = false;
   }
 });
