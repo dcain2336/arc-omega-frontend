@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ARC</title>
+  <title></title>
   <style>
-    :root { --bg:#070b12; --fg:#cfe7ff; --muted:#6f86a3; --accent:#45d6ff; }
+    :root { --bg:#070b12; --fg:#cfe7ff; --accent:#45d6ff; }
     html,body{height:100%; margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;}
-    .wrap{min-height:100%; display:flex; align-items:flex-start; justify-content:center; padding:48px 16px;}
+    .wrap{min-height:100%; display:flex; align-items:center; justify-content:center; padding:48px 16px;}
     .card{width:100%; max-width:420px;}
     button{
       width:100%; box-sizing:border-box; border-radius:14px;
@@ -16,42 +16,23 @@
       color:var(--fg); padding:14px 14px; font-size:16px;
       cursor:pointer;
     }
-    button:hover{background:rgba(69,214,255,.15);}
-    .hint{color:var(--muted); font-size:13px; margin-top:12px; line-height:1.4;}
-    .hidden{display:none;}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card">
       <button id="go">Continue</button>
-      <div class="hint" id="hint">
-        If prompted, complete the verification step and you’ll return here.
-      </div>
     </div>
   </div>
 
   <script>
-    // CHANGE THIS to wherever your real app lives:
-    // "/hud.html", "/command.html", "/index.html", etc.
+    // Change this if your app page is different:
     const TARGET = "/command.html";
-
-    const goBtn = document.getElementById("go");
-    const hint = document.getElementById("hint");
-
-    function go() {
-      // If Cloudflare Access is protecting this site,
-      // unauthenticated users are redirected BEFORE this runs.
-      window.location.href = TARGET;
-    }
-
-    goBtn.addEventListener("click", (e) => {
+    document.getElementById("go").addEventListener("click", (e) => {
       e.preventDefault();
-      go();
+      window.location.href = TARGET;
     });
-
-    // Optional: auto-forward after a moment
-    setTimeout(go, 250);
+    setTimeout(() => window.location.href = TARGET, 250);
   </script>
 </body>
 </html>
