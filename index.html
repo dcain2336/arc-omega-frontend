@@ -10,9 +10,7 @@
 
   <!-- Top bar -->
   <header class="topbar">
-    <button class="iconbtn" id="btnMenu" aria-label="Menu">
-      ☰
-    </button>
+    <button class="iconbtn" id="btnMenu" aria-label="Menu">☰</button>
 
     <div class="topbar__center">
       <div class="statusDot" id="statusDot"></div>
@@ -25,64 +23,63 @@
     </div>
   </header>
 
-  <!-- Side menu (Phase 1 shell) -->
-  <aside class="sidemenu" id="sidemenu" aria-hidden="true">
-    <div class="sidemenu__head">
-      <div class="mono sidemenu__title">MENU</div>
+  <!-- Backdrop (for side panels) -->
+  <div class="backdrop" id="backdrop" aria-hidden="true"></div>
+
+  <!-- LEFT: Side menu -->
+  <aside class="panel panel--left" id="sidemenu" aria-hidden="true">
+    <div class="panel__head">
+      <div class="mono panel__title">MENU</div>
       <button class="iconbtn" id="btnCloseMenu" aria-label="Close">✕</button>
     </div>
 
-    <div class="sidemenu__section">
-      <div class="sidemenu__label">Sessions</div>
+    <div class="panel__section">
+      <div class="panel__label">Sessions</div>
       <button class="menubtn" disabled>View previous sessions (Phase 2)</button>
     </div>
 
-    <div class="sidemenu__section">
-      <div class="sidemenu__label">Files</div>
+    <div class="panel__section">
+      <div class="panel__label">Files</div>
       <button class="menubtn" disabled>Created files (Phase 2)</button>
       <button class="menubtn" disabled>Upload vault (Phase 2)</button>
     </div>
 
-    <div class="sidemenu__section">
-      <div class="sidemenu__label">System</div>
+    <div class="panel__section">
+      <div class="panel__label">System</div>
       <button class="menubtn" disabled>Updates (Phase 3)</button>
       <button class="menubtn" disabled>Council logs (Phase 3)</button>
     </div>
 
-    <div class="sidemenu__foot mono">
-      ARC OMEGA • COMMAND CENTER (Phase 1)
-    </div>
+    <div class="panel__foot mono">ARC • COMMAND CENTER</div>
   </aside>
 
-  <!-- Tools panel (Phase 1 shell) -->
-  <aside class="toolspanel" id="toolspanel" aria-hidden="true">
-    <div class="toolspanel__head">
-      <div class="mono toolspanel__title">TOOLS</div>
+  <!-- RIGHT: Tools panel (collapsing, not baked into page) -->
+  <aside class="panel panel--right" id="toolspanel" aria-hidden="true">
+    <div class="panel__head">
+      <div class="mono panel__title">TOOLS</div>
       <button class="iconbtn" id="btnCloseTools" aria-label="Close">✕</button>
     </div>
 
-    <div class="toolspanel__section">
-      <div class="toolspanel__label">Quick</div>
+    <div class="panel__section">
+      <div class="panel__label">Quick</div>
       <button class="toolbtn" disabled>Weather lookup (Phase 2)</button>
       <button class="toolbtn" disabled>News search (Phase 2)</button>
       <button class="toolbtn" disabled>File analyze (Phase 2)</button>
     </div>
 
-    <div class="toolspanel__section">
-      <div class="toolspanel__label">Security</div>
+    <div class="panel__section">
+      <div class="panel__label">Security</div>
       <button class="toolbtn" disabled>Threat board (Phase 3)</button>
       <button class="toolbtn" disabled>Ghost mode (Phase 3)</button>
     </div>
 
-    <div class="toolspanel__foot mono">
-      (Tools route to backend later)
-    </div>
+    <div class="panel__foot mono">(Routes to backend later)</div>
   </aside>
 
   <!-- Main layout -->
   <main class="layout">
 
-    <!-- LEFT: ARC REACTOR / ORB -->
+    <!-- LEFT: ARC reactor -->
     <section class="tile reactorTile" aria-label="ARC Reactor">
       <div class="tile__head">
         <div class="tile__title">ARC</div>
@@ -90,124 +87,275 @@
       </div>
 
       <div class="reactorWrap">
-        <svg viewBox="0 0 220 220" class="reactor" aria-hidden="true">
+        <svg viewBox="0 0 320 320" class="reactor" aria-hidden="true">
           <defs>
-            <filter id="bloom" x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur stdDeviation="3.2" result="blur"/>
+            <!-- core cyan glow -->
+            <radialGradient id="cyanCore" cx="50%" cy="45%" r="60%">
+              <stop offset="0%"  stop-color="rgba(0,229,255,1)"/>
+              <stop offset="40%" stop-color="rgba(0,229,255,.85)"/>
+              <stop offset="72%" stop-color="rgba(0,229,255,.35)"/>
+              <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+            </radialGradient>
+
+            <!-- solid cyan base -->
+            <radialGradient id="cyanDisk" cx="50%" cy="45%" r="80%">
+              <stop offset="0%"  stop-color="rgba(0,229,255,.98)"/>
+              <stop offset="55%" stop-color="rgba(0,229,255,.88)"/>
+              <stop offset="100%" stop-color="rgba(0,229,255,.72)"/>
+            </radialGradient>
+
+            <!-- gunmetal ring -->
+            <linearGradient id="gunmetal" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="rgba(20,26,36,.98)"/>
+              <stop offset="55%" stop-color="rgba(8,10,14,.98)"/>
+              <stop offset="100%" stop-color="rgba(28,34,44,.98)"/>
+            </linearGradient>
+
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="10" result="b"/>
               <feMerge>
-                <feMergeNode in="blur"/>
+                <feMergeNode in="b"/>
                 <feMergeNode in="SourceGraphic"/>
               </feMerge>
             </filter>
 
-            <radialGradient id="coreGlow" cx="50%" cy="50%" r="55%">
-              <stop offset="0%" stop-color="rgba(0,229,255,.55)" />
-              <stop offset="60%" stop-color="rgba(0,229,255,.18)" />
-              <stop offset="100%" stop-color="rgba(0,0,0,0)" />
-            </radialGradient>
+            <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.2" result="b"/>
+              <feMerge>
+                <feMergeNode in="b"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
           </defs>
 
-          <!-- outer ring -->
-          <circle cx="110" cy="110" r="92"
-                  fill="rgba(255,255,255,.02)"
-                  stroke="rgba(69,214,255,.20)"
-                  stroke-width="3"/>
-          <circle cx="110" cy="110" r="92" fill="url(#coreGlow)" />
+          <!-- glow aura -->
+          <circle cx="160" cy="160" r="128" fill="url(#cyanCore)" filter="url(#glow)"/>
 
-          <!-- inner ring -->
-          <circle cx="110" cy="110" r="66"
-                  fill="rgba(0,0,0,0)"
-                  stroke="rgba(69,214,255,.22)"
-                  stroke-width="2"/>
+          <!-- SOLID CYAN DISK -->
+          <circle cx="160" cy="160" r="108" fill="url(#cyanDisk)"/>
 
-          <!-- spokes -->
-          <g stroke="rgba(69,214,255,.12)" stroke-width="2">
-            <line x1="110" y1="18" x2="110" y2="202"/>
-            <line x1="18" y1="110" x2="202" y2="110"/>
-            <line x1="44" y1="44" x2="176" y2="176"/>
-            <line x1="176" y1="44" x2="44" y2="176"/>
-          </g>
+          <!-- OUTER GUNMETAL RING (bordering edge) -->
+          <circle cx="160" cy="160" r="128" fill="none" stroke="url(#gunmetal)" stroke-width="18"/>
 
-          <!-- ===== Reactor: TWO triangles pointing DOWN (reference style) ===== -->
-          <g filter="url(#bloom)">
+          <!-- subtle inner ring -->
+          <circle cx="160" cy="160" r="114" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2"/>
 
-            <!-- OUTER inverted triangle (thick black lines) -->
-            <path d="M60 74 L160 74 L110 168 Z"
-                  fill="rgba(0,0,0,0)"
-                  stroke="rgba(7,11,18,.98)"
-                  stroke-width="16"
-                  stroke-linejoin="round"/>
+          <!-- ===== TRIANGLES (both point DOWN) ===== -->
+          <!-- Large triangle vertices ON the ring-ish -->
+          <!-- Points: top-left, top-right, bottom -->
+          <!-- Adjusted to sit near the border -->
+          <g filter="url(#soft)">
+            <!-- large triangle outline (black/gunmetal stroke) -->
+            <path id="triBig"
+              d="M 72 110 L 248 110 L 160 270 Z"
+              fill="none"
+              stroke="rgba(6,8,10,.95)"
+              stroke-width="14"
+              stroke-linejoin="round"/>
 
-            <!-- subtle cyan edge highlight -->
-            <path d="M60 74 L160 74 L110 168 Z"
-                  fill="rgba(0,0,0,0)"
-                  stroke="rgba(0,229,255,.40)"
-                  stroke-width="3"
-                  stroke-linejoin="round"/>
+            <!-- thin cyan edge highlight -->
+            <path
+              d="M 72 110 L 248 110 L 160 270 Z"
+              fill="none"
+              stroke="rgba(0,229,255,.28)"
+              stroke-width="3"
+              stroke-linejoin="round"/>
 
-            <!-- INNER inverted triangle (second triangle) -->
-            <path d="M76 94 L144 94 L110 154 Z"
-                  fill="rgba(0,0,0,0)"
-                  stroke="rgba(7,11,18,.98)"
-                  stroke-width="14"
-                  stroke-linejoin="round"/>
+            <!-- Smaller triangle centered, points aligned toward big triangle points -->
+            <path id="triSmall"
+              d="M 110 150 L 210 150 L 160 235 Z"
+              fill="none"
+              stroke="rgba(6,8,10,.95)"
+              stroke-width="12"
+              stroke-linejoin="round"/>
 
-            <!-- subtle cyan highlight -->
-            <path d="M76 94 L144 94 L110 154 Z"
-                  fill="rgba(0,0,0,0)"
-                  stroke="rgba(0,229,255,.26)"
-                  stroke-width="2"
-                  stroke-linejoin="round"/>
+            <path
+              d="M 110 150 L 210 150 L 160 235 Z"
+              fill="none"
+              stroke="rgba(0,229,255,.20)"
+              stroke-width="2.5"
+              stroke-linejoin="round"/>
 
-            <!-- center void frame -->
-            <path d="M92 108 L128 108 L110 142 Z"
-                  fill="rgba(0,0,0,0)"
-                  stroke="rgba(7,11,18,.98)"
-                  stroke-width="10"
-                  stroke-linejoin="round"/>
-
-            <!-- crossbars (thick dark bridges) -->
+            <!-- Side struts: two lines along each side that connect triangle sides to ring -->
+            <!-- Left side struts -->
             <g stroke-linecap="round">
-              <line x1="80" y1="120" x2="140" y2="120"
-                    stroke="rgba(7,11,18,.98)" stroke-width="10"/>
-              <line x1="86" y1="136" x2="134" y2="136"
-                    stroke="rgba(7,11,18,.98)" stroke-width="10"/>
+              <line x1="104" y1="162" x2="46" y2="192"
+                    stroke="rgba(6,8,10,.92)" stroke-width="10"/>
+              <line x1="104" y1="162" x2="46" y2="192"
+                    stroke="rgba(0,229,255,.16)" stroke-width="2.5"/>
 
-              <line x1="80" y1="120" x2="140" y2="120"
-                    stroke="rgba(0,229,255,.16)" stroke-width="2"/>
-              <line x1="86" y1="136" x2="134" y2="136"
-                    stroke="rgba(0,229,255,.16)" stroke-width="2"/>
+              <line x1="124" y1="198" x2="58" y2="232"
+                    stroke="rgba(6,8,10,.92)" stroke-width="10"/>
+              <line x1="124" y1="198" x2="58" y2="232"
+                    stroke="rgba(0,229,255,.16)" stroke-width="2.5"/>
             </g>
 
-            <!-- connector struts from triangle corners to ring -->
+            <!-- Right side struts -->
             <g stroke-linecap="round">
-              <!-- top-left -->
-              <line x1="60" y1="74" x2="38" y2="56"
-                    stroke="rgba(7,11,18,.98)" stroke-width="12"/>
-              <line x1="60" y1="74" x2="38" y2="56"
-                    stroke="rgba(0,229,255,.26)" stroke-width="3"/>
+              <line x1="216" y1="162" x2="274" y2="192"
+                    stroke="rgba(6,8,10,.92)" stroke-width="10"/>
+              <line x1="216" y1="162" x2="274" y2="192"
+                    stroke="rgba(0,229,255,.16)" stroke-width="2.5"/>
 
-              <!-- top-right -->
-              <line x1="160" y1="74" x2="182" y2="56"
-                    stroke="rgba(7,11,18,.98)" stroke-width="12"/>
-              <line x1="160" y1="74" x2="182" y2="56"
-                    stroke="rgba(0,229,255,.26)" stroke-width="3"/>
+              <line x1="196" y1="198" x2="262" y2="232"
+                    stroke="rgba(6,8,10,.92)" stroke-width="10"/>
+              <line x1="196" y1="198" x2="262" y2="232"
+                    stroke="rgba(0,229,255,.16)" stroke-width="2.5"/>
+            </g>
 
-              <!-- bottom point -->
-              <line x1="110" y1="168" x2="110" y2="196"
-                    stroke="rgba(7,11,18,.98)" stroke-width="12"/>
-              <line x1="110" y1="168" x2="110" y2="196"
-                    stroke="rgba(0,229,255,.26)" stroke-width="3"/>
+            <!-- Corner attachments to border (from big triangle top corners to ring edge) -->
+            <g stroke-linecap="round">
+              <line x1="72" y1="110" x2="54" y2="96"
+                    stroke="rgba(6,8,10,.95)" stroke-width="12"/>
+              <line x1="72" y1="110" x2="54" y2="96"
+                    stroke="rgba(0,229,255,.18)" stroke-width="3"/>
+
+              <line x1="248" y1="110" x2="266" y2="96"
+                    stroke="rgba(6,8,10,.95)" stroke-width="12"/>
+              <line x1="248" y1="110" x2="266" y2="96"
+                    stroke="rgba(0,229,255,.18)" stroke-width="3"/>
+
+              <line x1="160" y1="270" x2="160" y2="292"
+                    stroke="rgba(6,8,10,.95)" stroke-width="12"/>
+              <line x1="160" y1="270" x2="160" y2="292"
+                    stroke="rgba(0,229,255,.18)" stroke-width="3"/>
             </g>
           </g>
 
-          <!-- core dot -->
-          <circle cx="110" cy="110" r="8" fill="rgba(0,229,255,.85)"/>
-          <circle cx="110" cy="110" r="18" fill="none" stroke="rgba(0,229,255,.25)" stroke-width="2"/>
-
+          <!-- center dot -->
+          <circle cx="160" cy="160" r="6" fill="rgba(0,0,0,.85)"/>
+          <circle cx="160" cy="160" r="14" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2"/>
         </svg>
       </div>
 
       <div class="tile__foot">
         <div class="mini">Pulse sync: <span class="mono" id="pulseState">IDLE</span></div>
-        <div class="mini">Council: <span class="mono">BACKEND</span></div
+        <div class="mini">Council: <span class="mono">BACKEND</span></div>
+      </div>
+    </section>
+
+    <!-- CENTER: CHAT -->
+    <section class="tile chatTile" aria-label="Chat">
+      <div class="tile__head">
+        <div class="tile__title">COMMAND</div>
+        <div class="tile__pill mono">PHASE 1</div>
+      </div>
+
+      <div class="chatFeed" id="chatFeed">
+        <div class="msg msg--arc">
+          <div class="msg__meta mono">ARC</div>
+          <div class="msg__body">Command Center initialized.</div>
+        </div>
+      </div>
+
+      <div class="chatInput">
+        <input id="chatBox" placeholder="Type..." autocomplete="off" />
+        <button id="btnSend" class="sendbtn">SEND</button>
+      </div>
+
+      <div class="tile__foot">
+        <div class="mini">Uploads + memory + tools: Phase 2</div>
+      </div>
+    </section>
+
+    <!-- RIGHT: GLOBE + WAR CHEST -->
+    <section class="rightStack" aria-label="Right Stack">
+
+      <div class="tile">
+        <div class="tile__head">
+          <div class="tile__title">GLOBE</div>
+          <div class="tile__pill mono">PHASE 2</div>
+        </div>
+
+        <div class="globe">
+          <svg viewBox="0 0 220 220" class="globe__svg" aria-hidden="true">
+            <defs>
+              <radialGradient id="gg" cx="45%" cy="40%" r="70%">
+                <stop offset="0%" stop-color="rgba(0,229,255,.24)"/>
+                <stop offset="60%" stop-color="rgba(0,229,255,.10)"/>
+                <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+              </radialGradient>
+              <filter id="gbloom" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="2.5" result="b"/>
+                <feMerge>
+                  <feMergeNode in="b"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+
+            <circle cx="110" cy="110" r="92" fill="rgba(255,255,255,.02)" stroke="rgba(69,214,255,.18)" stroke-width="2"/>
+            <circle cx="110" cy="110" r="92" fill="url(#gg)"/>
+
+            <g stroke="rgba(69,214,255,.14)" stroke-width="2" fill="none">
+              <ellipse cx="110" cy="110" rx="70" ry="26"/>
+              <ellipse cx="110" cy="110" rx="82" ry="44"/>
+              <ellipse cx="110" cy="110" rx="88" ry="62"/>
+            </g>
+
+            <g stroke="rgba(69,214,255,.14)" stroke-width="2" fill="none">
+              <path d="M110 18 C80 50,80 170,110 202 C140 170,140 50,110 18 Z"/>
+              <path d="M110 18 C95 50,95 170,110 202 C125 170,125 50,110 18 Z"/>
+              <path d="M110 18 C65 55,65 165,110 202 C155 165,155 55,110 18 Z"/>
+            </g>
+
+            <g filter="url(#gbloom)">
+              <circle cx="150" cy="118" r="5" fill="rgba(0,229,255,.85)"/>
+              <circle cx="150" cy="118" r="12" fill="none" stroke="rgba(0,229,255,.35)" stroke-width="2"/>
+            </g>
+          </svg>
+        </div>
+
+        <div class="tile__foot">
+          <div class="mini">Location: (Phase 2)</div>
+          <div class="mini">MGRS: (Phase 2)</div>
+        </div>
+      </div>
+
+      <div class="tile">
+        <div class="tile__head">
+          <div class="tile__title">WAR CHEST</div>
+          <div class="tile__pill mono">PHASE 3</div>
+        </div>
+
+        <div class="chest">
+          <div class="chest__row">
+            <div class="chest__label">Status</div>
+            <div class="chest__value mono" id="chestStatus">LOCKED</div>
+          </div>
+          <div class="chest__row">
+            <div class="chest__label">Balance</div>
+            <div class="chest__value mono" id="chestBalance">$0.00</div>
+          </div>
+          <div class="chest__row">
+            <div class="chest__label">Last</div>
+            <div class="chest__value mono" id="chestLast">—</div>
+          </div>
+
+          <button class="toolbtn toolbtn--ghost" disabled>Manage (coming soon)</button>
+          <div class="panel__note">Later: approvals, audit logs, balances.</div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- Bottom tickers -->
+  <footer class="tickers">
+    <div class="ticker mono" id="tickerTime">
+      NYC 00:00 | CHI 00:00 | DEN 00:00 | LAX 00:00 | UTC 00:00 | OKI 00:00 | KOR 00:00 | PHI 00:00
+    </div>
+    <div class="ticker mono" id="tickerNews">
+      NEWS: (Phase 2) | STOCKS: (Phase 2) | CRYPTO: (Phase 2)
+    </div>
+  </footer>
+
+  <!-- Blackout overlay -->
+  <div class="blackout" id="blackout" aria-hidden="true">
+    <div class="blackout__text mono">BLACKOUT ACTIVE — ALL CLEAR REQUIRED</div>
+    <button class="blackout__btn" id="btnAllClear">ALL CLEAR</button>
+  </div>
+
+  <script src="/hud.js"></script>
+</body>
+</html>
