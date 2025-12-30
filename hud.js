@@ -1,43 +1,36 @@
-const API = "https://arc-omega-api.dcain1.workers.dev"; // your worker
-const form = document.getElementById("gate");
-const pw = document.getElementById("pw");
-const msg = document.getElementById("msg");
+const API = "https://arc-omega-api.dcain1.workers.dev";
 
-function showError(text){
-  msg.textContent = text;
-  msg.classList.add("show");
-  // red flash border
-  form.style.borderColor = "rgba(255,59,59,.8)";
-  setTimeout(()=> form.style.borderColor = "rgba(0,229,255,.25)", 650);
+async function arcQuery(prompt) {
+  const res = await fetch(`${API}/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, user_id: "admin_01" }),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error((data && (data.error || data.message)) || `HTTP ${res.status}`);
+  }
+  return data;
 }
 
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  msg.classList.remove("show");
+// Example hook-up: you must match these IDs to your HTML
+const input = document.getElementById("prompt");
+const sendBtn = document.getElementById("send");
+const out = document.getElementById("out");
 
-  const password = (pw.value || "").trim();
-  if (!password) return;
+sendBtn?.addEventListener("click", async () => {
+  const prompt = (input?.value || "").trim();
+  if (!prompt) return;
 
-  try{
-    const res = await fetch(`${API}/auth`, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ password }),
-    });
-
-    if (res.ok){
-      // success: fade out then redirect to command center (you’ll build next)
-      document.body.style.transition = "opacity 220ms ease";
-      document.body.style.opacity = "0";
-      setTimeout(()=> window.location.href = "/command.html", 230);
-      return;
-    }
-
-    // failed
-    showError("ACCESS DENIED. SECURITY NOTIFIED.");
-    pw.value = "";
-    pw.focus();
-  }catch(err){
-    showError("NETWORK ERROR");
+  sendBtn.disabled = true;
+  try {
+    const r = await arcQuery(prompt);
+    // expects { response: "...", ... }
+    out.textContent = r.response || JSON.stringify(r, null, 2);
+  } catch (e) {
+    out.textContent = `ERROR: ${e.message}`;
+  } finally {
+    sendBtn.disabled = false;
   }
 });
