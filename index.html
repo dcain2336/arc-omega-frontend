@@ -3,22 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ARC OMEGA</title>
-  <link rel="stylesheet" href="hud.css">
+  <title>ARC HUD</title>
+  <link rel="stylesheet" href="hud.css" />
 </head>
 <body>
   <div class="wrap">
-    <div class="card">
-      <div class="pill">Frontend: arc-omega-frontend.pages.dev</div>
-      <div class="pill">API: https://arc-omega-api.dcain1.workers.dev</div>
-      <div class="pill" id="hfPill">HF: (checking…)</div>
+    <div class="pill">Frontend: <span id="front"></span></div>
+    <div class="pill">API: <span id="api"></span></div>
+    <div class="pill">HF: <span id="hf"></span></div>
 
-      <textarea id="prompt" rows="6" placeholder="Type a prompt…">ping</textarea>
+    <textarea id="prompt" class="box" rows="6">ping</textarea>
 
-      <button id="sendBtn">Send</button>
+    <button id="send" class="btn">Send</button>
 
-      <pre id="out">(no response yet)</pre>
-    </div>
+    <pre id="out" class="out">(no response yet)</pre>
   </div>
 
   <script src="hud.js"></script>
