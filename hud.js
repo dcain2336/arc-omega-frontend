@@ -1,121 +1,75 @@
-// hud.js (DROP-IN for YOUR index.html)
+// hud.js — DROP IN FULL FILE
 
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
 
-const el = (id) => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 
-function logSys(line) {
-  const box = el("sysLog");
-  if (!box) return;
-  const p = document.createElement("div");
-  p.textContent = line;
-  box.appendChild(p);
-  box.scrollTop = box.scrollHeight;
+function sys(msg) {
+  const el = $("sysLog");
+  if (!el) return;
+  const line = document.createElement("div");
+  line.className = "sys-line";
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
 }
 
-function setMeta() {
-  const f = el("metaFrontend");
-  const a = el("metaApi");
-  const h = el("metaHf");
-  if (f) f.textContent = window.location.host || window.location.href;
-  if (a) a.textContent = API_BASE;
-  if (h) h.textContent = "via Worker (HF/Render failover)";
-}
-
-function addMsg(role, text) {
-  const chat = el("chat");
+function addMessage(role, text) {
+  const chat = $("chat");
   if (!chat) return;
 
-  const wrap = document.createElement("div");
-  wrap.className = "msg " + role;
+  const card = document.createElement("div");
+  card.className = `msg ${role}`;
 
-  // Minimal inline styling in case CSS classes are missing
-  wrap.style.margin = "10px 0";
-  wrap.style.padding = "12px 14px";
-  wrap.style.borderRadius = "14px";
-  wrap.style.border = "1px solid rgba(80,220,255,.18)";
-  wrap.style.background = "rgba(10,20,30,.55)";
-  wrap.style.whiteSpace = "pre-wrap";
-
-  // Slight distinction
-  if (role === "user") {
-    wrap.style.borderColor = "rgba(80,220,255,.25)";
-    wrap.style.background = "rgba(10,25,40,.55)";
-  } else if (role === "arc") {
-    wrap.style.borderColor = "rgba(80,220,255,.18)";
-    wrap.style.background = "rgba(10,20,30,.55)";
-  } else {
-    wrap.style.borderColor = "rgba(255,120,120,.25)";
-    wrap.style.background = "rgba(40,10,10,.35)";
-  }
-
-  const tag = document.createElement("div");
-  tag.textContent = role.toUpperCase();
-  tag.style.fontSize = "11px";
-  tag.style.opacity = "0.7";
-  tag.style.letterSpacing = "0.18em";
-  tag.style.marginBottom = "6px";
+  const label = document.createElement("div");
+  label.className = "msg-label";
+  label.textContent = role.toUpperCase();
 
   const body = document.createElement("div");
+  body.className = "msg-body";
   body.textContent = text;
 
-  wrap.appendChild(tag);
-  wrap.appendChild(body);
-
-  chat.appendChild(wrap);
+  card.appendChild(label);
+  card.appendChild(body);
+  chat.appendChild(card);
   chat.scrollTop = chat.scrollHeight;
 }
 
-async function postJSON(path, body) {
-  // Cloudflare Access: send cookies
+async function postJSON(path, payload) {
   const res = await fetch(API_BASE + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    mode: "cors",
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   });
 
-  const raw = await res.text();
-  let data = null;
-  try { data = JSON.parse(raw); } catch { data = { raw }; }
-  return { ok: res.ok, status: res.status, data };
-}
-
-async function getJSON(path) {
-  const res = await fetch(API_BASE + path, {
-    method: "GET",
-    credentials: "include",
-    mode: "cors",
-  });
-
-  const raw = await res.text();
-  let data = null;
-  try { data = JSON.parse(raw); } catch { data = { raw }; }
-  return { ok: res.ok, status: res.status, data };
-}
-
-async function sendPrompt(promptOverride = null) {
-  const input = el("prompt");
-  if (!input) {
-    logSys("ERROR: #prompt not found");
-    return;
+  const txt = await res.text();
+  let data;
+  try {
+    data = JSON.parse(txt);
+  } catch {
+    data = { raw: txt };
   }
+  return { ok: res.ok, status: res.status, data };
+}
 
-  const prompt = (promptOverride ?? input.value ?? "").trim();
+async function sendPrompt() {
+  const input = $("prompt");
+  if (!input) return;
+
+  const prompt = (input.value || "").trim();
   if (!prompt) return;
 
-  addMsg("user", prompt);
-  if (!promptOverride) input.value = "";
+  addMessage("user", prompt);
+  input.value = "";
 
-  logSys("sending /query ...");
+  sys("Sending /query …");
 
   try {
     const r = await postJSON("/query", { prompt, user_id: "web" });
 
     if (!r.ok) {
-      logSys(`HTTP ${r.status}: ${JSON.stringify(r.data)}`);
-      addMsg("error", `Error ${r.status}\n${JSON.stringify(r.data, null, 2)}`);
+      addMessage("error", `Error ${r.status}\n${JSON.stringify(r.data, null, 2)}`);
+      sys(`Error ${r.status}`);
       return;
     }
 
@@ -125,59 +79,53 @@ async function sendPrompt(promptOverride = null) {
       r.data?.raw ??
       JSON.stringify(r.data);
 
-    addMsg("arc", reply);
-    logSys("ok");
+    // show which upstream answered if the Worker returned it
+    // (we can’t read response headers in this simple helper, but your Worker sets X-ARC-Upstream—
+    // you’ll see it when testing with a REST client; UI can be upgraded later)
+    addMessage("arc", reply);
+    sys("OK");
   } catch (e) {
-    // This is your "TypeError: Load failed"
-    logSys(`NETWORK ERROR: ${e?.name || "Error"}: ${e?.message || e}`);
-    addMsg("error", `NETWORK ERROR:\n${e?.name || "Error"}: ${e?.message || e}`);
+    addMessage("error", `NETWORK ERROR: ${String(e)}`);
+    sys(`NETWORK ERROR: ${String(e)}`);
   }
-}
-
-async function ping() {
-  return sendPrompt("ping");
 }
 
 async function testAPI() {
-  logSys("testing /test ...");
+  sys("Testing API /test …");
   try {
-    const r = await getJSON("/test");
-    if (!r.ok) {
-      logSys(`HTTP ${r.status}: ${JSON.stringify(r.data)}`);
-      addMsg("error", `Test failed ${r.status}\n${JSON.stringify(r.data, null, 2)}`);
-      return;
-    }
-    logSys("test ok");
-    addMsg("arc", `Test OK:\n${JSON.stringify(r.data, null, 2)}`);
+    const res = await fetch(API_BASE + "/test", { method: "GET" });
+    const txt = await res.text();
+    sys(`API /test -> ${res.status}`);
+    addMessage("system", txt);
   } catch (e) {
-    logSys(`NETWORK ERROR: ${e?.message || e}`);
-    addMsg("error", `NETWORK ERROR:\n${e?.message || e}`);
+    addMessage("error", `NETWORK ERROR: ${String(e)}`);
+    sys(`NETWORK ERROR: ${String(e)}`);
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  setMeta();
+// Panels + controls (your Phase 1 UI)
+function togglePanel(id, show) {
+  const p = $(id);
+  if (!p) return;
+  p.classList.toggle("hidden", !show);
+  p.setAttribute("aria-hidden", show ? "false" : "true");
+}
 
-  const btnSend = el("send");
-  const input = el("prompt");
-  const btnPing = el("btnPing");
-  const btnTest = el("btnTest");
+function setupUI() {
+  // meta pills
+  const metaFrontend = $("metaFrontend");
+  const metaApi = $("metaApi");
+  const metaHf = $("metaHf");
 
-  // Prevent overlay/toast from blocking taps if your CSS uses one
-  const possibleOverlays = ["out", "status", "toast", "hudToast", "hudStatus"];
-  for (const id of possibleOverlays) {
-    const node = el(id);
-    if (node) node.style.pointerEvents = "none";
-  }
+  if (metaFrontend) metaFrontend.textContent = location.host;
+  if (metaApi) metaApi.textContent = API_BASE;
+  if (metaHf) metaHf.textContent = "via Worker (Render/HF failover)";
 
-  if (btnSend) {
-    btnSend.addEventListener("click", (e) => {
-      e.preventDefault();
-      sendPrompt();
-    });
-  } else {
-    logSys("WARN: #send button not found");
-  }
+  // composer wiring
+  const sendBtn = $("send");
+  const input = $("prompt");
+
+  if (sendBtn) sendBtn.addEventListener("click", sendPrompt);
 
   if (input) {
     input.addEventListener("keydown", (e) => {
@@ -186,12 +134,52 @@ document.addEventListener("DOMContentLoaded", () => {
         sendPrompt();
       }
     });
-  } else {
-    logSys("WARN: #prompt input not found");
   }
 
-  if (btnPing) btnPing.addEventListener("click", (e) => { e.preventDefault(); ping(); });
-  if (btnTest) btnTest.addEventListener("click", (e) => { e.preventDefault(); testAPI(); });
+  // system buttons
+  const btnPing = $("btnPing");
+  const btnTest = $("btnTest");
+  if (btnPing) btnPing.addEventListener("click", () => {
+    if (input) input.value = "ping";
+    sendPrompt();
+  });
+  if (btnTest) btnTest.addEventListener("click", testAPI);
 
-  logSys("HUD ready");
-});
+  // sessions panel
+  const btnSessions = $("btnSessions");
+  const btnCloseSessions = $("btnCloseSessions");
+  if (btnSessions) btnSessions.addEventListener("click", () => togglePanel("panelSessions", true));
+  if (btnCloseSessions) btnCloseSessions.addEventListener("click", () => togglePanel("panelSessions", false));
+
+  // tools panel
+  const btnTools = $("btnTools");
+  const btnCloseTools = $("btnCloseTools");
+  if (btnTools) btnTools.addEventListener("click", () => togglePanel("panelTools", true));
+  if (btnCloseTools) btnCloseTools.addEventListener("click", () => togglePanel("panelTools", false));
+
+  // blackout
+  const btnBlackout = $("btnBlackout");
+  const blackout = $("blackout");
+  if (btnBlackout && blackout) {
+    btnBlackout.addEventListener("click", () => {
+      blackout.classList.toggle("hidden");
+      blackout.setAttribute("aria-hidden", blackout.classList.contains("hidden") ? "true" : "false");
+    });
+    blackout.addEventListener("click", () => blackout.classList.add("hidden"));
+  }
+
+  // clear chat
+  const btnClearChat = $("btnClearChat");
+  if (btnClearChat) {
+    btnClearChat.addEventListener("click", () => {
+      const chat = $("chat");
+      if (chat) chat.innerHTML = "";
+      sys("Chat cleared.");
+    });
+  }
+
+  // initial message
+  sys("HUD: ready (type ping + tap Send)");
+}
+
+document.addEventListener("DOMContentLoaded", setupUI);
