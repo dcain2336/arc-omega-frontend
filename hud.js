@@ -1,4 +1,4 @@
-// hud.js (DROP-IN for your current index.html)
+// hud.js — FULL DROP-IN (matches your index.html exactly)
 
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
 
@@ -6,224 +6,180 @@ const $ = (id) => document.getElementById(id);
 
 function nowTime() {
   const d = new Date();
-  return d.toLocaleTimeString();
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function sysLog(line, kind = "muted") {
-  const box = $("sysLog");
-  if (!box) return;
-  const div = document.createElement("div");
-  div.className = "sysline " + kind;
-  div.textContent = `[${nowTime()}] ${line}`;
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
+function setSysLog(text, kind = "") {
+  const el = $("sysLog");
+  if (!el) return;
+  const line = document.createElement("div");
+  line.className = "sysline " + kind;
+  line.textContent = `[${nowTime()}] ${text}`;
+  el.prepend(line);
 }
 
-function addMsg(role, text) {
+function appendChat(role, text) {
   const chat = $("chat");
   if (!chat) return;
 
   const wrap = document.createElement("div");
-  wrap.className = "msg " + role;
+  wrap.className = "bubble " + role;
 
-  const tag = document.createElement("div");
-  tag.className = "msg-tag";
-  tag.textContent = role === "user" ? "USER" : role === "arc" ? "ARC" : "ERROR";
+  const label = document.createElement("div");
+  label.className = "bubble-label";
+  label.textContent = role.toUpperCase();
 
   const body = document.createElement("div");
-  body.className = "msg-body";
+  body.className = "bubble-body";
   body.textContent = text;
 
-  wrap.appendChild(tag);
+  wrap.appendChild(label);
   wrap.appendChild(body);
   chat.appendChild(wrap);
   chat.scrollTop = chat.scrollHeight;
 }
 
-async function fetchJSON(url, init) {
-  const res = await fetch(url, init);
-  const txt = await res.text();
-  let data;
-  try {
-    data = JSON.parse(txt);
-  } catch {
-    data = { raw: txt };
-  }
-  return { ok: res.ok, status: res.status, data, headers: res.headers };
-}
-
-async function postQuery(prompt, user_id = "web") {
-  return fetchJSON(`${API_BASE}/query`, {
+async function postJSON(path, body) {
+  const res = await fetch(API_BASE + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, user_id }),
+    body: JSON.stringify(body),
   });
+
+  const txt = await res.text();
+  let data;
+  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+
+  return { ok: res.ok, status: res.status, data };
 }
 
-async function refreshMeta() {
-  // Frontend
-  const host = location.host;
-  const metaFrontend = $("metaFrontend");
-  if (metaFrontend) metaFrontend.textContent = host;
-
-  // API base
-  const metaApi = $("metaApi");
-  if (metaApi) metaApi.textContent = API_BASE;
-
-  // Try Worker /test
-  try {
-    const t = await fetchJSON(`${API_BASE}/test`, { method: "GET" });
-    if (t.ok) {
-      const hf = $("metaHf");
-      if (hf) hf.textContent = "via Worker (Render/HF failover)";
-      sysLog("Worker /test OK", "ok");
-    } else {
-      sysLog(`Worker /test returned ${t.status}`, "warn");
-    }
-  } catch (e) {
-    sysLog(`Worker /test failed: ${String(e)}`, "bad");
-  }
-}
-
-// ----- UI: Panels -----
-function togglePanel(id, show) {
-  const el = $(id);
-  if (!el) return;
-  const isHidden = el.classList.contains("hidden");
-  const shouldShow = show ?? isHidden;
-  el.classList.toggle("hidden", !shouldShow);
-  el.setAttribute("aria-hidden", shouldShow ? "false" : "true");
-}
-
-function bindPanels() {
-  const btnSessions = $("btnSessions");
-  const btnTools = $("btnTools");
-  const btnCloseSessions = $("btnCloseSessions");
-  const btnCloseTools = $("btnCloseTools");
-
-  if (btnSessions) btnSessions.onclick = () => togglePanel("panelSessions", true);
-  if (btnTools) btnTools.onclick = () => togglePanel("panelTools", true);
-  if (btnCloseSessions) btnCloseSessions.onclick = () => togglePanel("panelSessions", false);
-  if (btnCloseTools) btnCloseTools.onclick = () => togglePanel("panelTools", false);
-}
-
-// ----- UI: Blackout -----
-function bindBlackout() {
-  const btn = $("btnBlackout");
-  const blackout = $("blackout");
-  if (!btn || !blackout) return;
-
-  btn.onclick = () => {
-    const hidden = blackout.classList.contains("hidden");
-    blackout.classList.toggle("hidden", !hidden);
-    blackout.setAttribute("aria-hidden", hidden ? "false" : "true");
-  };
-
-  blackout.onclick = () => {
-    blackout.classList.add("hidden");
-    blackout.setAttribute("aria-hidden", "true");
-  };
-}
-
-// ----- Chat send -----
-async function sendFromComposer() {
+async function sendPrompt() {
   const input = $("prompt");
-  const btn = $("send");
   if (!input) return;
 
   const prompt = (input.value || "").trim();
   if (!prompt) return;
 
-  addMsg("user", prompt);
+  appendChat("user", prompt);
   input.value = "";
 
-  if (btn) btn.disabled = true;
-  sysLog("Sending /query …");
+  setSysLog(`Sending prompt to Worker: ${API_BASE}/query`);
 
+  const r = await postJSON("/query", { prompt, user_id: "web" });
+
+  if (!r.ok) {
+    appendChat("error", `Error ${r.status}\n${JSON.stringify(r.data, null, 2)}`);
+    setSysLog(`Error ${r.status}`, "err");
+    return;
+  }
+
+  const reply =
+    r.data?.response ??
+    r.data?.text ??
+    r.data?.raw ??
+    JSON.stringify(r.data);
+
+  appendChat("arc", reply);
+
+  const upstream = r.data?.upstream || r.data?.provider || "(see X-ARC-Upstream header)";
+  setSysLog(`OK (${r.status}). Reply received.`, "ok");
+}
+
+async function ping() {
+  // Ping is just a convenience prompt
+  $("prompt").value = "ping";
+  await sendPrompt();
+}
+
+async function testApi() {
   try {
-    const r = await postQuery(prompt, "web");
+    setSysLog(`GET ${API_BASE}/test`);
+    const res = await fetch(API_BASE + "/test", { method: "GET" });
+    const txt = await res.text();
+    let data;
+    try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
 
-    const upstream = r.headers.get("X-ARC-Upstream");
-    if (upstream) sysLog(`Upstream: ${upstream}`, "ok");
-
-    if (!r.ok) {
-      addMsg("err", `Error ${r.status}\n${JSON.stringify(r.data, null, 2)}`);
-      sysLog(`Query failed (${r.status})`, "bad");
-      return;
-    }
-
-    const reply =
-      r.data?.response ??
-      r.data?.text ??
-      r.data?.raw ??
-      JSON.stringify(r.data);
-
-    addMsg("arc", reply);
-    sysLog("Query OK", "ok");
+    appendChat("arc", `TEST RESULT\n${JSON.stringify(data, null, 2)}`);
+    setSysLog(`Test OK (${res.status})`, "ok");
   } catch (e) {
-    addMsg("err", `NETWORK ERROR: ${String(e)}`);
-    sysLog(`Network error: ${String(e)}`, "bad");
-  } finally {
-    if (btn) btn.disabled = false;
+    appendChat("error", `Test failed: ${String(e)}`);
+    setSysLog(`Test failed: ${String(e)}`, "err");
   }
 }
 
-function bindComposer() {
-  const btn = $("send");
+function wirePanels() {
+  // Left panel (Sessions/Files)
+  const panelSessions = $("panelSessions");
+  const btnSessions = $("btnSessions");
+  const btnCloseSessions = $("btnCloseSessions");
+
+  // Right panel (Tools)
+  const panelTools = $("panelTools");
+  const btnTools = $("btnTools");
+  const btnCloseTools = $("btnCloseTools");
+
+  function show(el) { if (el) el.classList.remove("hidden"); }
+  function hide(el) { if (el) el.classList.add("hidden"); }
+
+  if (btnSessions) btnSessions.onclick = () => show(panelSessions);
+  if (btnCloseSessions) btnCloseSessions.onclick = () => hide(panelSessions);
+
+  if (btnTools) btnTools.onclick = () => show(panelTools);
+  if (btnCloseTools) btnCloseTools.onclick = () => hide(panelTools);
+
+  // Blackout
+  const btnBlackout = $("btnBlackout");
+  const blackout = $("blackout");
+  if (btnBlackout && blackout) {
+    btnBlackout.onclick = () => blackout.classList.toggle("hidden");
+    blackout.onclick = () => blackout.classList.add("hidden"); // tap to clear
+  }
+
+  // Clear chat
+  const btnClearChat = $("btnClearChat");
+  if (btnClearChat) {
+    btnClearChat.onclick = () => {
+      const chat = $("chat");
+      if (chat) chat.innerHTML = "";
+      setSysLog("Chat cleared.");
+    };
+  }
+}
+
+function fillMeta() {
+  const front = $("metaFrontend");
+  const api = $("metaApi");
+  const hf = $("metaHf");
+
+  if (front) front.textContent = location.host;
+  if (api) api.textContent = API_BASE;
+  if (hf) hf.textContent = "via Worker (Render/HF failover)";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  fillMeta();
+  wirePanels();
+
+  const sendBtn = $("send");     // <-- your HTML uses id="send"
   const input = $("prompt");
 
-  if (btn) btn.onclick = sendFromComposer;
+  if (sendBtn) sendBtn.onclick = sendPrompt;
 
   if (input) {
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        sendFromComposer();
+        sendPrompt();
       }
     });
   }
-}
 
-// ----- System buttons -----
-function bindSystemButtons() {
+  // System buttons
   const btnPing = $("btnPing");
   const btnTest = $("btnTest");
-  const btnClearChat = $("btnClearChat");
 
-  if (btnPing) btnPing.onclick = () => {
-    const input = $("prompt");
-    if (input) input.value = "ping";
-    sendFromComposer();
-  };
+  if (btnPing) btnPing.onclick = ping;
+  if (btnTest) btnTest.onclick = testApi;
 
-  if (btnTest) btnTest.onclick = async () => {
-    sysLog("Testing Worker /test …");
-    try {
-      const t = await fetchJSON(`${API_BASE}/test`, { method: "GET" });
-      if (t.ok) {
-        sysLog(`Worker /test OK: ${JSON.stringify(t.data)}`, "ok");
-      } else {
-        sysLog(`Worker /test ${t.status}: ${JSON.stringify(t.data)}`, "warn");
-      }
-    } catch (e) {
-      sysLog(`Worker /test failed: ${String(e)}`, "bad");
-    }
-  };
-
-  if (btnClearChat) btnClearChat.onclick = () => {
-    const chat = $("chat");
-    if (chat) chat.innerHTML = "";
-    sysLog("Cleared chat view", "muted");
-  };
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  bindPanels();
-  bindBlackout();
-  bindComposer();
-  bindSystemButtons();
-  refreshMeta();
-
-  // Friendly starter line so you know JS is alive
-  sysLog("HUD ready. Type ping + tap Send.", "ok");
+  setSysLog("HUD ready.");
 });
