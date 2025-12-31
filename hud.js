@@ -2,7 +2,7 @@
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
 
 // IMPORTANT: must match Worker secret ARC_KEY
-const ARC_KEY = "PASTE_THE_SAME_VALUE_YOU_SET_AS_ARC_KEY";
+const ARC_KEY = "Widbricksba174@&$)876dfHhbTDbj284@@$$&";
 
 const $ = (id) => document.getElementById(id);
 
