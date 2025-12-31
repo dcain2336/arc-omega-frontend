@@ -1,228 +1,324 @@
-// hud.js (Phase 1: working chat + reactor states + panels + blackout)
-// Frontend talks ONLY to your Cloudflare Worker.
+// ===========================
+// ARC OMEGA - Phase 1 HUD JS
+// ===========================
+
+// ✅ Your worker API (the only thing frontend talks to)
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
 
-// ---------- Helpers ----------
-const $ = (id) => document.getElementById(id);
+// UI refs
+const chatEl = document.getElementById("chat");
+const promptEl = document.getElementById("prompt");
+const sendBtn = document.getElementById("send");
+const sysLog = document.getElementById("sysLog");
 
-function setText(id, text) {
-  const el = $(id);
-  if (el) el.textContent = text;
+const metaFrontend = document.getElementById("metaFrontend");
+const metaApi = document.getElementById("metaApi");
+const metaHf = document.getElementById("metaHf");
+
+const statusText = document.getElementById("statusText");
+const statusDot = document.getElementById("statusDot");
+const arcState = document.getElementById("arcState");
+const arcOrb = document.getElementById("arcOrb");
+
+const blackout = document.getElementById("blackout");
+const btnBlackout = document.getElementById("btnBlackout");
+
+const panelTools = document.getElementById("panelTools");
+const panelSessions = document.getElementById("panelSessions");
+const btnTools = document.getElementById("btnTools");
+const btnSessions = document.getElementById("btnSessions");
+const btnCloseTools = document.getElementById("btnCloseTools");
+const btnCloseSessions = document.getElementById("btnCloseSessions");
+
+const btnPing = document.getElementById("btnPing");
+const btnTest = document.getElementById("btnTest");
+
+const tickerWeather = document.getElementById("tickerWeather");
+const tickerNews = document.getElementById("tickerNews");
+const tickerMarkets = document.getElementById("tickerMarkets");
+const tickerTime = document.getElementById("tickerTime");
+
+const sessionList = document.getElementById("sessionList");
+const btnNewSession = document.getElementById("btnNewSession");
+const btnClearChat = document.getElementById("btnClearChat");
+
+// Tools buttons (mock for now)
+document.getElementById("btnToolWeather").onclick = () => pushSys("Tools: Weather (mock).");
+document.getElementById("btnToolNews").onclick = () => pushSys("Tools: News (mock).");
+document.getElementById("btnToolStocks").onclick = () => pushSys("Tools: Markets (mock).");
+document.getElementById("btnToolWorldTime").onclick = () => pushSys("Tools: World Time (mock).");
+
+// Session state (local-only for Phase 1)
+let sessions = [];
+let activeSessionId = null;
+
+// ---------- Helpers ----------
+function setStatus(mode, text){
+  statusText.textContent = text || mode;
+  arcState.textContent = text || mode;
+
+  // dot colors
+  if (mode === "THINKING"){
+    statusDot.style.background = "#45d6ff";
+    statusDot.style.boxShadow = "0 0 12px rgba(0,229,255,.35)";
+    arcOrb.classList.add("thinking");
+  } else if (mode === "ERROR"){
+    statusDot.style.background = "#ff4d6d";
+    statusDot.style.boxShadow = "0 0 12px rgba(255,77,109,.35)";
+    arcOrb.classList.remove("thinking");
+  } else {
+    statusDot.style.background = "#26ff7a";
+    statusDot.style.boxShadow = "0 0 12px rgba(38,255,122,.25)";
+    arcOrb.classList.remove("thinking");
+  }
 }
 
-function nowEpoch() { return Date.now(); }
+function addMsg(who, text, kind){
+  const wrap = document.createElement("div");
+  wrap.className = "msg " + (kind || "");
+  wrap.innerHTML = `
+    <div class="who">${who}</div>
+    <div class="text"></div>
+  `;
+  wrap.querySelector(".text").textContent = text;
+  chatEl.appendChild(wrap);
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
 
-// ---------- UI Elements ----------
-const chatFeed = $("chatFeed");
-const chatBox  = $("chatBox");
-const btnSend  = $("btnSend");
+function pushSys(line){
+  const t = new Date().toLocaleTimeString();
+  sysLog.textContent = `[${t}] ${line}\n` + (sysLog.textContent || "");
+}
 
-const statusDot  = $("statusDot");
-const statusText = $("statusText");
-const modePill   = $("modePill");
-const pulseState = $("pulseState");
+async function httpGet(path){
+  const r = await fetch(API_BASE + path, { method: "GET" });
+  const txt = await r.text();
+  let data;
+  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+  return { ok: r.ok, status: r.status, data };
+}
 
-const reactorSvg = document.querySelector("svg.reactor");
+async function httpPost(path, body){
+  const r = await fetch(API_BASE + path, {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify(body)
+  });
+  const txt = await r.text();
+  let data;
+  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+  return { ok: r.ok, status: r.status, data };
+}
 
-const backdrop   = $("backdrop");
-const sidemenu   = $("sidemenu");
-const toolspanel = $("toolspanel");
+// ---------- Sessions (Phase 1 local-only) ----------
+function newSession(){
+  const id = "s_" + Math.random().toString(16).slice(2);
+  const label = "Session " + (sessions.length + 1);
+  const s = { id, label, created: Date.now() };
+  sessions.unshift(s);
+  activeSessionId = id;
+  renderSessions();
+  addMsg("SYSTEM", `Loaded ${label}`, "ok");
+}
 
-const btnMenu       = $("btnMenu");
-const btnCloseMenu  = $("btnCloseMenu");
-const btnTools      = $("btnTools");
-const btnCloseTools = $("btnCloseTools");
-
-const blackout   = $("blackout");
-const btnBlackout = $("btnBlackout");
-const btnAllClear = $("btnAllClear");
-
-// ---------- Reactor State ----------
-const ARC_STATE = {
-  IDLE:   { name: "BLUE",  dot: "rgba(0,229,255,.85)", pill: "BLUE" },
-  THINK:  { name: "CYAN",  dot: "rgba(0,229,255,.95)", pill: "CYAN" },
-  DONE:   { name: "GREEN", dot: "rgba(46,255,165,.90)", pill: "GREEN" },
-  WARN:   { name: "ORANGE",dot: "rgba(255,170,65,.92)", pill: "ORANGE" },
-  ERROR:  { name: "RED",   dot: "rgba(255,59,59,.90)", pill: "RED" },
-};
-
-function setArcState(key) {
-  const s = ARC_STATE[key] || ARC_STATE.IDLE;
-  if (statusDot) statusDot.style.background = s.dot;
-  if (modePill)  modePill.textContent = s.pill;
-  if (pulseState) pulseState.textContent = key;
-
-  // Pulse animation only while THINK
-  if (reactorSvg) {
-    if (key === "THINK") reactorSvg.classList.add("reactorPulse");
-    else reactorSvg.classList.remove("reactorPulse");
-  }
+function renderSessions(){
+  sessionList.innerHTML = "";
+  sessions.forEach(s => {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.textContent = (s.id === activeSessionId ? "• " : "") + s.label;
+    item.onclick = () => {
+      activeSessionId = s.id;
+      renderSessions();
+      addMsg("SYSTEM", `Switched to ${s.label} (Phase 1: chat not persisted yet)`, "ok");
+      closePanels();
+    };
+    sessionList.appendChild(item);
+  });
 }
 
 // ---------- Panels ----------
-function closePanels() {
-  sidemenu?.classList.remove("open");
-  toolspanel?.classList.remove("open");
-  backdrop?.classList.remove("show");
-  sidemenu?.setAttribute("aria-hidden", "true");
-  toolspanel?.setAttribute("aria-hidden", "true");
-  backdrop?.setAttribute("aria-hidden", "true");
+function closePanels(){
+  panelTools.classList.add("hidden");
+  panelTools.setAttribute("aria-hidden","true");
+  panelSessions.classList.add("hidden");
+  panelSessions.setAttribute("aria-hidden","true");
 }
 
-function openLeftPanel() {
-  closePanels();
-  sidemenu?.classList.add("open");
-  backdrop?.classList.add("show");
-  sidemenu?.setAttribute("aria-hidden", "false");
-  backdrop?.setAttribute("aria-hidden", "false");
-}
+btnTools.onclick = () => {
+  panelTools.classList.toggle("hidden");
+  panelTools.setAttribute("aria-hidden", panelTools.classList.contains("hidden") ? "true" : "false");
+};
+btnSessions.onclick = () => {
+  panelSessions.classList.toggle("hidden");
+  panelSessions.setAttribute("aria-hidden", panelSessions.classList.contains("hidden") ? "true" : "false");
+};
+btnCloseTools.onclick = closePanels;
+btnCloseSessions.onclick = closePanels;
 
-function openRightPanel() {
-  closePanels();
-  toolspanel?.classList.add("open");
-  backdrop?.classList.add("show");
-  toolspanel?.setAttribute("aria-hidden", "false");
-  backdrop?.setAttribute("aria-hidden", "false");
-}
-
-backdrop?.addEventListener("click", closePanels);
-btnMenu?.addEventListener("click", openLeftPanel);
-btnCloseMenu?.addEventListener("click", closePanels);
-btnTools?.addEventListener("click", openRightPanel);
-btnCloseTools?.addEventListener("click", closePanels);
+// Close panels if you tap outside (mobile friendly)
+document.addEventListener("click", (e) => {
+  const isPanelClick = panelTools.contains(e.target) || panelSessions.contains(e.target);
+  const isButtonClick = e.target === btnTools || e.target === btnSessions;
+  if (!isPanelClick && !isButtonClick){
+    // don't force-close always; just close if open
+    if (!panelTools.classList.contains("hidden") || !panelSessions.classList.contains("hidden")){
+      closePanels();
+    }
+  }
+});
 
 // ---------- Blackout ----------
-btnBlackout?.addEventListener("click", () => {
-  blackout?.classList.add("show");
-  blackout?.setAttribute("aria-hidden", "false");
+btnBlackout.onclick = () => {
+  blackout.classList.toggle("hidden");
+  blackout.setAttribute("aria-hidden", blackout.classList.contains("hidden") ? "true" : "false");
+};
+
+// Tap blackout to exit (you can remove this later if you want it “all clear” only)
+blackout.onclick = () => {
+  blackout.classList.add("hidden");
+  blackout.setAttribute("aria-hidden","true");
+};
+
+// ---------- Composer autosize ----------
+function autosize(){
+  promptEl.style.height = "auto";
+  promptEl.style.height = Math.min(promptEl.scrollHeight, 160) + "px";
+}
+promptEl.addEventListener("input", autosize);
+
+// Send on Enter (without shift)
+promptEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey){
+    e.preventDefault();
+    send();
+  }
 });
-btnAllClear?.addEventListener("click", () => {
-  blackout?.classList.remove("show");
-  blackout?.setAttribute("aria-hidden", "true");
-});
 
-// ---------- Chat Rendering ----------
-function addMessage(role, text) {
-  if (!chatFeed) return;
+// ---------- API actions ----------
+async function refreshMeta(){
+  metaFrontend.textContent = location.host;
+  metaApi.textContent = API_BASE;
 
-  const wrap = document.createElement("div");
-  wrap.className = `msg ${role === "user" ? "msg--user" : "msg--arc"}`;
-
-  const meta = document.createElement("div");
-  meta.className = "msg__meta mono";
-  meta.textContent = role === "user" ? "ADMIN" : "ARC";
-
-  const body = document.createElement("div");
-  body.className = "msg__body";
-  body.textContent = text;
-
-  wrap.appendChild(meta);
-  wrap.appendChild(body);
-  chatFeed.appendChild(wrap);
-
-  // scroll to bottom
-  chatFeed.scrollTop = chatFeed.scrollHeight;
-}
-
-function lockSend(lock) {
-  if (btnSend) btnSend.disabled = !!lock;
-  if (chatBox) chatBox.disabled = !!lock;
-}
-
-// ---------- API ----------
-async function postJSON(path, payload) {
-  const res = await fetch(API_BASE + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const txt = await res.text();
-  let data = {};
-  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
-
-  return { ok: res.ok, status: res.status, data };
-}
-
-// ---------- Send Flow ----------
-async function sendPrompt() {
-  const text = (chatBox?.value || "").trim();
-  if (!text) return;
-
-  addMessage("user", text);
-  chatBox.value = "";
-
-  setText("statusText", "ARC: THINKING");
-  setArcState("THINK");
-  lockSend(true);
-
-  try {
-    const started = nowEpoch();
-
-    // minimal payload; backend can ignore extras
-    const r = await postJSON("/query", { prompt: text });
-
-    if (!r.ok) {
-      setArcState("ERROR");
-      setText("statusText", `ARC: ERROR (${r.status})`);
-      addMessage("arc", r.data?.detail || r.data?.error || "Request failed.");
-      return;
-    }
-
-    const reply = r.data?.response || r.data?.answer || r.data?.raw || "(no response)";
-    addMessage("arc", reply);
-
-    // small “completed” state
-    setArcState("DONE");
-    setText("statusText", `ARC: ONLINE (${Math.max(1, Math.round((nowEpoch() - started)/1000))}s)`);
-    setTimeout(() => setArcState("IDLE"), 900);
-
-  } catch (e) {
-    setArcState("ERROR");
-    setText("statusText", "ARC: NETWORK ERROR");
-    addMessage("arc", "Network error talking to the API.");
-  } finally {
-    lockSend(false);
-    chatBox?.focus();
+  // Best-effort: ask Worker who the HF space is
+  const t = await httpGet("/test");
+  if (t.ok){
+    metaHf.textContent = t.data.hf_space || "(unknown)";
+  } else {
+    metaHf.textContent = "(test failed)";
   }
 }
 
-// enter-to-send
-chatBox?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendPrompt();
-});
-btnSend?.addEventListener("click", sendPrompt);
+async function send(){
+  const prompt = (promptEl.value || "").trim();
+  if (!prompt) return;
 
-// ---------- Tickers (Phase 1 basic clock) ----------
-function pad2(n){ return String(n).padStart(2,"0"); }
-function fmtTZ(tz){
-  const d = new Date();
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(d);
-  const hh = parts.find(p=>p.type==="hour")?.value || "00";
-  const mm = parts.find(p=>p.type==="minute")?.value || "00";
-  return `${hh}:${mm}`;
+  setStatus("THINKING", "THINKING");
+  sendBtn.disabled = true;
+  promptEl.disabled = true;
+
+  addMsg("ADMIN", prompt, "admin");
+  promptEl.value = "";
+  autosize();
+
+  try{
+    const res = await httpPost("/query", {
+      prompt,
+      user_id: activeSessionId || "default_session"
+    });
+
+    if (!res.ok){
+      setStatus("ERROR", "ERROR");
+      addMsg("ERROR", `HTTP ${res.status}\n${JSON.stringify(res.data, null, 2)}`, "err");
+      pushSys(`Query failed: HTTP ${res.status}`);
+      return;
+    }
+
+    // expected shape from your backend:
+    // { response: "...", provider: "...", timestamp: ... }
+    const out = res.data.response ?? JSON.stringify(res.data, null, 2);
+    addMsg("ARC", out, "arc");
+    setStatus("ONLINE", "ONLINE");
+    pushSys("Query OK.");
+  } catch (e){
+    setStatus("ERROR", "ERROR");
+    addMsg("ERROR", `NETWORK ERROR\n${String(e)}`, "err");
+    pushSys("Network error during /query.");
+  } finally {
+    sendBtn.disabled = false;
+    promptEl.disabled = false;
+    promptEl.focus();
+  }
 }
 
-function tick() {
-  const str =
-    `NYC ${fmtTZ("America/New_York")} | ` +
-    `CHI ${fmtTZ("America/Chicago")} | ` +
-    `DEN ${fmtTZ("America/Denver")} | ` +
-    `LAX ${fmtTZ("America/Los_Angeles")} | ` +
-    `UTC ${fmtTZ("UTC")} | ` +
-    `OKI ${fmtTZ("Asia/Tokyo")} | ` +   // Okinawa uses Japan time
-    `KOR ${fmtTZ("Asia/Seoul")} | ` +
-    `PHI ${fmtTZ("Asia/Manila")}`;
-  setText("tickerTime", str);
-}
-setInterval(tick, 1000 * 10);
-tick();
+// ---------- Buttons ----------
+sendBtn.onclick = send;
 
-// Initial state
-setArcState("IDLE");
-setText("statusText", "ARC: ONLINE");
+btnPing.onclick = async () => {
+  addMsg("ADMIN", "ping", "admin");
+  setStatus("THINKING", "THINKING");
+  try{
+    const res = await httpPost("/query", { prompt:"ping", user_id: activeSessionId || "default_session" });
+    if (res.ok){
+      addMsg("ARC", res.data.response ?? JSON.stringify(res.data, null, 2), "arc");
+      setStatus("ONLINE", "ONLINE");
+      pushSys("Ping OK.");
+    } else {
+      setStatus("ERROR", "ERROR");
+      addMsg("ERROR", `HTTP ${res.status}\n${JSON.stringify(res.data, null, 2)}`, "err");
+      pushSys("Ping failed.");
+    }
+  } catch(e){
+    setStatus("ERROR", "ERROR");
+    addMsg("ERROR", `NETWORK ERROR\n${String(e)}`, "err");
+    pushSys("Ping network error.");
+  }
+};
+
+btnTest.onclick = async () => {
+  setStatus("THINKING", "THINKING");
+  const t = await httpGet("/test");
+  if (t.ok){
+    addMsg("SYSTEM", JSON.stringify(t.data, null, 2), "ok");
+    pushSys("GET /test OK.");
+    metaHf.textContent = t.data.hf_space || "(unknown)";
+    setStatus("ONLINE", "ONLINE");
+  } else {
+    addMsg("ERROR", `GET /test failed (HTTP ${t.status})\n${JSON.stringify(t.data, null, 2)}`, "err");
+    pushSys("GET /test failed.");
+    setStatus("ERROR", "ERROR");
+  }
+};
+
+btnNewSession.onclick = () => {
+  newSession();
+  closePanels();
+};
+
+btnClearChat.onclick = () => {
+  chatEl.innerHTML = "";
+  addMsg("SYSTEM", "Chat cleared (view only).", "ok");
+  closePanels();
+};
+
+// ---------- Mock tickers (Phase 1 placeholders) ----------
+function seedTickers(){
+  tickerWeather.textContent = "Clear · 72°F · Wind 6mph (mock)";
+  tickerNews.textContent = "Headlines ready (mock ticker)";
+  tickerMarkets.textContent = "BTC +0.0% · SPY +0.0% (mock)";
+  tickerTime.textContent = "UTC — · Local — (mock)";
+}
+
+// ---------- Boot ----------
+(function init(){
+  seedTickers();
+
+  // create first session
+  sessions = [];
+  newSession();
+
+  refreshMeta().catch(()=>{});
+  setStatus("ONLINE", "ONLINE");
+
+  addMsg("SYSTEM", "Phase 1 Command Center online. Backend stable. UI layout locked.", "ok");
+})();
