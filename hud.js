@@ -1,95 +1,73 @@
-// hud.js (DROP-IN)
-// No x-arc-key. Uses Cloudflare Access (cookies) instead.
+// hud.js (DROP-IN for YOUR index.html)
 
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
 
-// ---------- helpers ----------
-const $ = (sel) => document.querySelector(sel);
+const el = (id) => document.getElementById(id);
 
-function findEl() {
-  // Chat log container
-  const log =
-    $("#log") ||
-    $("#chatLog") ||
-    $("#hudLog") ||
-    $('[data-role="log"]');
-
-  // Prompt input (textarea or input)
-  const prompt =
-    $("#prompt") ||
-    $("#promptInput") ||
-    $("#promptBox") ||
-    $('textarea[name="prompt"]') ||
-    $('input[name="prompt"]') ||
-    $('[data-role="prompt"]') ||
-    $("textarea") ||
-    $('input[type="text"]');
-
-  // Send button
-  const sendBtn =
-    $("#sendBtn") ||
-    $("#send") ||
-    $("#btnSend") ||
-    $('[data-action="send"]') ||
-    $('button[type="submit"]') ||
-    $("button");
-
-  // Status/toast output
-  const status =
-    $("#out") ||
-    $("#status") ||
-    $("#hudStatus") ||
-    $("#toast") ||
-    $("#hudToast") ||
-    $('[data-role="status"]');
-
-  // Optional system buttons
-  const pingBtn =
-    $("#pingBtn") ||
-    $('[data-action="ping"]') ||
-    $("#btnPing");
-
-  const testBtn =
-    $("#testApiBtn") ||
-    $('[data-action="test-api"]') ||
-    $("#btnTestApi");
-
-  return { log, prompt, sendBtn, status, pingBtn, testBtn };
+function logSys(line) {
+  const box = el("sysLog");
+  if (!box) return;
+  const p = document.createElement("div");
+  p.textContent = line;
+  box.appendChild(p);
+  box.scrollTop = box.scrollHeight;
 }
 
-function setStatus(text) {
-  const { status } = findEl();
-  if (!status) return;
-
-  // If it's a toast-like bar, update it
-  status.textContent = text;
-
-  // Prevent it from blocking taps if it's overlaying the input
-  try {
-    status.style.pointerEvents = "none";
-  } catch {}
+function setMeta() {
+  const f = el("metaFrontend");
+  const a = el("metaApi");
+  const h = el("metaHf");
+  if (f) f.textContent = window.location.host || window.location.href;
+  if (a) a.textContent = API_BASE;
+  if (h) h.textContent = "via Worker (HF/Render failover)";
 }
 
-function appendChat(role, text) {
-  const { log } = findEl();
-  if (!log) return;
+function addMsg(role, text) {
+  const chat = el("chat");
+  if (!chat) return;
 
-  const bubble = document.createElement("div");
-  bubble.className = `bubble ${role}`;
-  bubble.textContent = text;
+  const wrap = document.createElement("div");
+  wrap.className = "msg " + role;
 
-  log.appendChild(bubble);
+  // Minimal inline styling in case CSS classes are missing
+  wrap.style.margin = "10px 0";
+  wrap.style.padding = "12px 14px";
+  wrap.style.borderRadius = "14px";
+  wrap.style.border = "1px solid rgba(80,220,255,.18)";
+  wrap.style.background = "rgba(10,20,30,.55)";
+  wrap.style.whiteSpace = "pre-wrap";
 
-  // scroll to bottom
-  try {
-    log.scrollTop = log.scrollHeight;
-  } catch {}
+  // Slight distinction
+  if (role === "user") {
+    wrap.style.borderColor = "rgba(80,220,255,.25)";
+    wrap.style.background = "rgba(10,25,40,.55)";
+  } else if (role === "arc") {
+    wrap.style.borderColor = "rgba(80,220,255,.18)";
+    wrap.style.background = "rgba(10,20,30,.55)";
+  } else {
+    wrap.style.borderColor = "rgba(255,120,120,.25)";
+    wrap.style.background = "rgba(40,10,10,.35)";
+  }
+
+  const tag = document.createElement("div");
+  tag.textContent = role.toUpperCase();
+  tag.style.fontSize = "11px";
+  tag.style.opacity = "0.7";
+  tag.style.letterSpacing = "0.18em";
+  tag.style.marginBottom = "6px";
+
+  const body = document.createElement("div");
+  body.textContent = text;
+
+  wrap.appendChild(tag);
+  wrap.appendChild(body);
+
+  chat.appendChild(wrap);
+  chat.scrollTop = chat.scrollHeight;
 }
 
 async function postJSON(path, body) {
-  // IMPORTANT for Cloudflare Access:
-  // - credentials: "include" sends CF Access cookies
-  // - if your Worker CORS is mis-set (Allow-Origin:* + Allow-Credentials:true), Safari will throw TypeError: Load failed
+  // Cloudflare Access: send cookies
   const res = await fetch(API_BASE + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -98,9 +76,9 @@ async function postJSON(path, body) {
     body: JSON.stringify(body),
   });
 
-  const txt = await res.text();
-  let data;
-  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+  const raw = await res.text();
+  let data = null;
+  try { data = JSON.parse(raw); } catch { data = { raw }; }
   return { ok: res.ok, status: res.status, data };
 }
 
@@ -111,33 +89,33 @@ async function getJSON(path) {
     mode: "cors",
   });
 
-  const txt = await res.text();
-  let data;
-  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+  const raw = await res.text();
+  let data = null;
+  try { data = JSON.parse(raw); } catch { data = { raw }; }
   return { ok: res.ok, status: res.status, data };
 }
 
-// ---------- actions ----------
 async function sendPrompt(promptOverride = null) {
-  const { prompt } = findEl();
-  if (!prompt) {
-    setStatus("HUD: can't find prompt input (missing #prompt?)");
+  const input = el("prompt");
+  if (!input) {
+    logSys("ERROR: #prompt not found");
     return;
   }
 
-  const text = (promptOverride ?? prompt.value ?? "").trim();
-  if (!text) return;
+  const prompt = (promptOverride ?? input.value ?? "").trim();
+  if (!prompt) return;
 
-  appendChat("user", text);
+  addMsg("user", prompt);
+  if (!promptOverride) input.value = "";
 
-  if (!promptOverride) prompt.value = "";
-  setStatus("HUD: (sending...)");
+  logSys("sending /query ...");
 
   try {
-    const r = await postJSON("/query", { prompt: text, user_id: "web" });
+    const r = await postJSON("/query", { prompt, user_id: "web" });
 
     if (!r.ok) {
-      setStatus(`HUD: Error ${r.status}: ${JSON.stringify(r.data)}`);
+      logSys(`HTTP ${r.status}: ${JSON.stringify(r.data)}`);
+      addMsg("error", `Error ${r.status}\n${JSON.stringify(r.data, null, 2)}`);
       return;
     }
 
@@ -147,64 +125,73 @@ async function sendPrompt(promptOverride = null) {
       r.data?.raw ??
       JSON.stringify(r.data);
 
-    appendChat("arc", reply);
-    setStatus("HUD: (ok)");
+    addMsg("arc", reply);
+    logSys("ok");
   } catch (e) {
-    setStatus(`HUD: NETWORK ERROR: ${e?.name || "Error"}: ${e?.message || e}`);
+    // This is your "TypeError: Load failed"
+    logSys(`NETWORK ERROR: ${e?.name || "Error"}: ${e?.message || e}`);
+    addMsg("error", `NETWORK ERROR:\n${e?.name || "Error"}: ${e?.message || e}`);
   }
+}
+
+async function ping() {
+  return sendPrompt("ping");
 }
 
 async function testAPI() {
-  setStatus("HUD: (testing API...)");
+  logSys("testing /test ...");
   try {
     const r = await getJSON("/test");
     if (!r.ok) {
-      setStatus(`HUD: /test failed ${r.status}: ${JSON.stringify(r.data)}`);
+      logSys(`HTTP ${r.status}: ${JSON.stringify(r.data)}`);
+      addMsg("error", `Test failed ${r.status}\n${JSON.stringify(r.data, null, 2)}`);
       return;
     }
-    setStatus(`HUD: /test OK: ${JSON.stringify(r.data)}`);
+    logSys("test ok");
+    addMsg("arc", `Test OK:\n${JSON.stringify(r.data, null, 2)}`);
   } catch (e) {
-    setStatus(`HUD: /test NETWORK ERROR: ${e?.message || e}`);
+    logSys(`NETWORK ERROR: ${e?.message || e}`);
+    addMsg("error", `NETWORK ERROR:\n${e?.message || e}`);
   }
 }
 
-// ---------- wiring ----------
 document.addEventListener("DOMContentLoaded", () => {
-  const { sendBtn, prompt, pingBtn, testBtn } = findEl();
+  setMeta();
 
-  // Send button
-  if (sendBtn) {
-    sendBtn.addEventListener("click", (e) => {
+  const btnSend = el("send");
+  const input = el("prompt");
+  const btnPing = el("btnPing");
+  const btnTest = el("btnTest");
+
+  // Prevent overlay/toast from blocking taps if your CSS uses one
+  const possibleOverlays = ["out", "status", "toast", "hudToast", "hudStatus"];
+  for (const id of possibleOverlays) {
+    const node = el(id);
+    if (node) node.style.pointerEvents = "none";
+  }
+
+  if (btnSend) {
+    btnSend.addEventListener("click", (e) => {
       e.preventDefault();
       sendPrompt();
     });
+  } else {
+    logSys("WARN: #send button not found");
   }
 
-  // Enter to send (Shift+Enter for newline)
-  if (prompt) {
-    prompt.addEventListener("keydown", (e) => {
+  if (input) {
+    input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         sendPrompt();
       }
     });
+  } else {
+    logSys("WARN: #prompt input not found");
   }
 
-  // Optional Ping button
-  if (pingBtn) {
-    pingBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      sendPrompt("ping");
-    });
-  }
+  if (btnPing) btnPing.addEventListener("click", (e) => { e.preventDefault(); ping(); });
+  if (btnTest) btnTest.addEventListener("click", (e) => { e.preventDefault(); testAPI(); });
 
-  // Optional Test API button
-  if (testBtn) {
-    testBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      testAPI();
-    });
-  }
-
-  setStatus("HUD: ready (type ping + tap Send)");
+  logSys("HUD ready");
 });
