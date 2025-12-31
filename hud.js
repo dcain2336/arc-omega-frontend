@@ -1,18 +1,15 @@
-// hud.js
-const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
+// hud.js (DROP-IN)
+// Uses Cloudflare Worker as the single API entrypoint.
+// No x-arc-key header (Cloudflare Access is your current gate).
 
-// IMPORTANT: must match Worker secret ARC_KEY
-const ARC_KEY = "Widbricksba174@&$)876dfHhbTDbj284@@$$&";
+const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
 
 const $ = (id) => document.getElementById(id);
 
 async function postJSON(path, body) {
   const res = await fetch(API_BASE + path, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-arc-key": ARC_KEY,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 
@@ -30,9 +27,11 @@ function setStatus(text) {
 function appendChat(role, text) {
   const log = $("log");
   if (!log) return;
+
   const wrap = document.createElement("div");
   wrap.className = "bubble " + role;
   wrap.textContent = text;
+
   log.appendChild(wrap);
   log.scrollTop = log.scrollHeight;
 }
@@ -48,21 +47,26 @@ async function sendPrompt() {
   input.value = "";
   setStatus("(sending...)");
 
-  const r = await postJSON("/query", { prompt, user_id: "web" });
+  try {
+    // Worker expects { prompt, user_id }
+    const r = await postJSON("/query", { prompt, user_id: "web" });
 
-  if (!r.ok) {
-    setStatus(`Error ${r.status}: ${JSON.stringify(r.data)}`);
-    return;
+    if (!r.ok) {
+      setStatus(`Error ${r.status}: ${JSON.stringify(r.data)}`);
+      return;
+    }
+
+    const reply =
+      r.data?.response ??
+      r.data?.text ??
+      r.data?.raw ??
+      JSON.stringify(r.data);
+
+    appendChat("arc", reply);
+    setStatus("(ok)");
+  } catch (e) {
+    setStatus(`NETWORK ERROR: ${String(e)}`);
   }
-
-  const reply =
-    r.data?.response ??
-    r.data?.text ??
-    r.data?.raw ??
-    JSON.stringify(r.data);
-
-  appendChat("arc", reply);
-  setStatus("(ok)");
 }
 
 // Hook button + Enter
