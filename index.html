@@ -87,13 +87,7 @@
       </div>
 
       <div class="reactorWrap">
-        <!-- Geometry notes:
-             - Outer ring radius: 128 at (160,160)
-             - Big triangle vertices are ON the circle (perfect fit):
-                 A (top-left)  = (70, 70)
-                 B (top-right) = (250, 70)
-                 C (bottom)    = (160, 288)
-           -->
+        <!-- Updated: EQUILATERAL triangles + no overhangs + missing top connector lines added -->
         <svg viewBox="0 0 320 320" class="reactor" aria-hidden="true">
           <defs>
             <!-- glow aura -->
@@ -127,7 +121,7 @@
             </filter>
 
             <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="1.6" result="b"/>
+              <feGaussianBlur stdDeviation="1.25" result="b"/>
               <feMerge>
                 <feMergeNode in="b"/>
                 <feMergeNode in="SourceGraphic"/>
@@ -147,55 +141,92 @@
           <!-- inner subtle ring -->
           <circle cx="160" cy="160" r="114" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="2"/>
 
+          <!-- ===== “REFERENCE-LIKE” DETAILS ===== -->
+          <!-- Thin tick segments around the rim -->
+          <g opacity="0.25" stroke="rgba(0,0,0,.65)" stroke-width="4" stroke-linecap="round">
+            <!-- 12 ticks -->
+            <line x1="160" y1="20"  x2="160" y2="34"/>
+            <line x1="240" y1="40"  x2="232" y2="52"/>
+            <line x1="286" y1="110" x2="272" y2="110"/>
+            <line x1="278" y1="190" x2="265" y2="186"/>
+            <line x1="240" y1="280" x2="232" y2="268"/>
+            <line x1="160" y1="300" x2="160" y2="286"/>
+            <line x1="80"  y1="280" x2="88"  y2="268"/>
+            <line x1="42"  y1="190" x2="55"  y2="186"/>
+            <line x1="34"  y1="110" x2="48"  y2="110"/>
+            <line x1="80"  y1="40"  x2="88"  y2="52"/>
+            <!-- two extra small ticks -->
+            <line x1="210" y1="28"  x2="206" y2="40"/>
+            <line x1="110" y1="28"  x2="114" y2="40"/>
+          </g>
+
+          <!-- faint outer ring line -->
+          <circle cx="160" cy="160" r="137" fill="none" stroke="rgba(0,229,255,.09)" stroke-width="2"/>
+
           <!-- ===== TRIANGLES + CONNECTORS ===== -->
           <g filter="url(#soft)">
 
-            <!-- BIG TRIANGLE (solid gunmetal stroke) -->
+            <!-- EQUILATERAL BIG TRIANGLE:
+                 Side length = 180
+                 Height = 180 * sqrt(3)/2 ≈ 155.885
+                 Top Y = 82.0575, Bottom Y = 237.9425, Center X = 160
+                 A(70,82.0575), B(250,82.0575), C(160,237.9425)
+            -->
             <path id="triBig"
-              d="M 70 70 L 250 70 L 160 288 Z"
+              d="M 70 82.0575 L 250 82.0575 L 160 237.9425 Z"
               fill="none"
               stroke="rgba(6,8,10,.98)"
               stroke-width="14"
               stroke-linejoin="round"/>
 
-            <!-- SMALL TRIANGLE (centered inside big one)
-                 Vertices are on lines from center towards big vertices,
-                 so they align with A,B,C directions and feel “locked in”.
-                 A'=(126,126) B'=(194,126) C'=(160,206)
+            <!-- EQUILATERAL SMALL TRIANGLE (scaled, centered):
+                 scale ~ 0.42 of big around centroid.
+                 Using vertices:
+                 A'(122.2,122.6) B'(197.8,122.6) C'(160,188.1)
             -->
             <path id="triSmall"
-              d="M 126 126 L 194 126 L 160 206 Z"
+              d="M 122.2 122.6 L 197.8 122.6 L 160 188.1 Z"
               fill="none"
               stroke="rgba(6,8,10,.98)"
               stroke-width="12"
               stroke-linejoin="round"/>
 
-            <!-- CONNECTORS: small triangle vertices -> big triangle corners -->
-            <g stroke-linecap="round">
-              <line x1="126" y1="126" x2="70"  y2="70"  stroke="rgba(6,8,10,.98)" stroke-width="10"/>
-              <line x1="194" y1="126" x2="250" y2="70"  stroke="rgba(6,8,10,.98)" stroke-width="10"/>
-              <line x1="160" y1="206" x2="160" y2="288" stroke="rgba(6,8,10,.98)" stroke-width="10"/>
-            </g>
-
-            <!-- SIDE STRUTS: two lines per side connecting big triangle sides to circle border -->
-            <!-- Left side (A->C). Struts go outward to ring (approx points on circle). -->
+            <!-- CONNECTORS: small -> big corners (no overhang: endpoints land on vertices) -->
             <g stroke-linecap="round" stroke="rgba(6,8,10,.98)" stroke-width="10">
-              <line x1="114" y1="160" x2="56"  y2="192"/>
-              <line x1="134" y1="210" x2="68"  y2="242"/>
+              <line x1="122.2" y1="122.6" x2="70"  y2="82.0575"/>
+              <line x1="197.8" y1="122.6" x2="250" y2="82.0575"/>
+              <line x1="160"   y1="188.1" x2="160" y2="237.9425"/>
             </g>
 
-            <!-- Right side (B->C) -->
+            <!-- SIDE STRUTS: two per side, trimmed to end before outer ring (no overhang) -->
+            <!-- Left side struts -->
             <g stroke-linecap="round" stroke="rgba(6,8,10,.98)" stroke-width="10">
-              <line x1="206" y1="160" x2="264" y2="192"/>
-              <line x1="186" y1="210" x2="252" y2="242"/>
+              <line x1="118" y1="156" x2="72"  y2="182"/>
+              <line x1="132" y1="190" x2="86"  y2="216"/>
             </g>
 
-            <!-- CORNER “LOCK” INTO RING: short stubs so corners visibly attach to the border -->
+            <!-- Right side struts -->
+            <g stroke-linecap="round" stroke="rgba(6,8,10,.98)" stroke-width="10">
+              <line x1="202" y1="156" x2="248" y2="182"/>
+              <line x1="188" y1="190" x2="234" y2="216"/>
+            </g>
+
+            <!-- ✅ MISSING TOP CONNECTOR LINES (2):
+                 Connect top side of big triangle to ring, no overhang.
+                 These go upward from points along top edge to near rim.
+            -->
+            <g stroke-linecap="round" stroke="rgba(6,8,10,.98)" stroke-width="10">
+              <line x1="112" y1="82.0575" x2="112" y2="48"/>
+              <line x1="208" y1="82.0575" x2="208" y2="48"/>
+            </g>
+
+            <!-- CORNER “LOCK” STUBS: trimmed so they stop at the ring line (no sticking out) -->
             <g stroke-linecap="round" stroke="rgba(6,8,10,.98)" stroke-width="12">
-              <line x1="70"  y1="70"  x2="54"  y2="54"/>
-              <line x1="250" y1="70"  x2="266" y2="54"/>
-              <line x1="160" y1="288" x2="160" y2="306"/>
+              <line x1="70"  y1="82.0575" x2="58"  y2="70"/>
+              <line x1="250" y1="82.0575" x2="262" y2="70"/>
+              <line x1="160" y1="237.9425" x2="160" y2="252"/>
             </g>
+
           </g>
         </svg>
       </div>
