@@ -1,86 +1,100 @@
-// hud.js (drop-in, self-debugging, auto-wires)
+// hud.js (DROP-IN)
+// No x-arc-key. Uses Cloudflare Access (cookies) instead.
+
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
 
 // ---------- helpers ----------
-const byId = (id) => document.getElementById(id);
-const qs = (sel) => document.querySelector(sel);
+const $ = (sel) => document.querySelector(sel);
 
-function ensureDebugBox() {
-  // Prefer existing #out if you have it
-  let out = byId("out");
-  if (out) return out;
+function findEl() {
+  // Chat log container
+  const log =
+    $("#log") ||
+    $("#chatLog") ||
+    $("#hudLog") ||
+    $('[data-role="log"]');
 
-  // Otherwise create a small debug/status line at bottom
-  out = document.createElement("div");
-  out.id = "out";
-  out.style.cssText =
-    "position:fixed;left:12px;right:12px;bottom:12px;" +
-    "padding:10px 12px;border-radius:12px;" +
-    "background:rgba(0,0,0,.55);border:1px solid rgba(69,214,255,.25);" +
-    "color:#cfe7ff;font:12px/1.3 system-ui;z-index:9999;" +
-    "backdrop-filter: blur(6px);";
-  out.textContent = "HUD: loaded";
-  document.body.appendChild(out);
-  return out;
+  // Prompt input (textarea or input)
+  const prompt =
+    $("#prompt") ||
+    $("#promptInput") ||
+    $("#promptBox") ||
+    $('textarea[name="prompt"]') ||
+    $('input[name="prompt"]') ||
+    $('[data-role="prompt"]') ||
+    $("textarea") ||
+    $('input[type="text"]');
+
+  // Send button
+  const sendBtn =
+    $("#sendBtn") ||
+    $("#send") ||
+    $("#btnSend") ||
+    $('[data-action="send"]') ||
+    $('button[type="submit"]') ||
+    $("button");
+
+  // Status/toast output
+  const status =
+    $("#out") ||
+    $("#status") ||
+    $("#hudStatus") ||
+    $("#toast") ||
+    $("#hudToast") ||
+    $('[data-role="status"]');
+
+  // Optional system buttons
+  const pingBtn =
+    $("#pingBtn") ||
+    $('[data-action="ping"]') ||
+    $("#btnPing");
+
+  const testBtn =
+    $("#testApiBtn") ||
+    $('[data-action="test-api"]') ||
+    $("#btnTestApi");
+
+  return { log, prompt, sendBtn, status, pingBtn, testBtn };
 }
 
-function setStatus(msg) {
-  const out = ensureDebugBox();
-  out.textContent = msg;
-}
+function setStatus(text) {
+  const { status } = findEl();
+  if (!status) return;
 
-function findPromptInput() {
-  // Try your expected IDs first
-  return (
-    byId("prompt") ||
-    byId("input") ||
-    byId("msg") ||
-    qs("textarea") ||
-    qs('input[type="text"]') ||
-    qs('input:not([type="hidden"]):not([type="email"]):not([type="password"])')
-  );
-}
+  // If it's a toast-like bar, update it
+  status.textContent = text;
 
-function findSendButton() {
-  // Try your expected IDs first
-  return (
-    byId("sendBtn") ||
-    byId("send") ||
-    byId("btnSend") ||
-    qs('[data-action="send"]') ||
-    qs("button")
-  );
-}
-
-function findLogContainer() {
-  return byId("log") || qs('[data-role="chatlog"]') || qs(".log") || qs(".chat") || null;
+  // Prevent it from blocking taps if it's overlaying the input
+  try {
+    status.style.pointerEvents = "none";
+  } catch {}
 }
 
 function appendChat(role, text) {
-  const log = findLogContainer();
-  if (!log) {
-    // No log container? Still show status so you can see it’s firing
-    setStatus(`HUD: ${role}: ${String(text).slice(0, 120)}`);
-    return;
-  }
+  const { log } = findEl();
+  if (!log) return;
 
   const bubble = document.createElement("div");
-  bubble.className = "bubble " + role;
+  bubble.className = `bubble ${role}`;
   bubble.textContent = text;
 
   log.appendChild(bubble);
-  log.scrollTop = log.scrollHeight;
+
+  // scroll to bottom
+  try {
+    log.scrollTop = log.scrollHeight;
+  } catch {}
 }
 
 async function postJSON(path, body) {
+  // IMPORTANT for Cloudflare Access:
+  // - credentials: "include" sends CF Access cookies
+  // - if your Worker CORS is mis-set (Allow-Origin:* + Allow-Credentials:true), Safari will throw TypeError: Load failed
   const res = await fetch(API_BASE + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-
-    // Cloudflare Access cookie support (safe even if not needed)
     credentials: "include",
     mode: "cors",
-
     body: JSON.stringify(body),
   });
 
@@ -90,26 +104,37 @@ async function postJSON(path, body) {
   return { ok: res.ok, status: res.status, data };
 }
 
-// ---------- main ----------
-async function sendPrompt() {
-  const input = findPromptInput();
-  if (!input) {
-    setStatus("HUD ERROR: can't find input. Add id='prompt' to your input/textarea.");
-    return;
-  }
+async function getJSON(path) {
+  const res = await fetch(API_BASE + path, {
+    method: "GET",
+    credentials: "include",
+    mode: "cors",
+  });
 
-  const prompt = (input.value || "").trim();
+  const txt = await res.text();
+  let data;
+  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+  return { ok: res.ok, status: res.status, data };
+}
+
+// ---------- actions ----------
+async function sendPrompt(promptOverride = null) {
+  const { prompt } = findEl();
   if (!prompt) {
-    setStatus("HUD: type something first");
+    setStatus("HUD: can't find prompt input (missing #prompt?)");
     return;
   }
 
-  appendChat("user", prompt);
-  input.value = "";
-  setStatus("HUD: sending…");
+  const text = (promptOverride ?? prompt.value ?? "").trim();
+  if (!text) return;
+
+  appendChat("user", text);
+
+  if (!promptOverride) prompt.value = "";
+  setStatus("HUD: (sending...)");
 
   try {
-    const r = await postJSON("/query", { prompt, user_id: "web" });
+    const r = await postJSON("/query", { prompt: text, user_id: "web" });
 
     if (!r.ok) {
       setStatus(`HUD: Error ${r.status}: ${JSON.stringify(r.data)}`);
@@ -123,29 +148,41 @@ async function sendPrompt() {
       JSON.stringify(r.data);
 
     appendChat("arc", reply);
-    setStatus("HUD: ok");
+    setStatus("HUD: (ok)");
   } catch (e) {
-    setStatus(`HUD: NETWORK ERROR: ${String(e)}`);
+    setStatus(`HUD: NETWORK ERROR: ${e?.name || "Error"}: ${e?.message || e}`);
   }
 }
 
-function wireUp() {
-  setStatus("HUD: wiring…");
+async function testAPI() {
+  setStatus("HUD: (testing API...)");
+  try {
+    const r = await getJSON("/test");
+    if (!r.ok) {
+      setStatus(`HUD: /test failed ${r.status}: ${JSON.stringify(r.data)}`);
+      return;
+    }
+    setStatus(`HUD: /test OK: ${JSON.stringify(r.data)}`);
+  } catch (e) {
+    setStatus(`HUD: /test NETWORK ERROR: ${e?.message || e}`);
+  }
+}
 
-  const btn = findSendButton();
-  const input = findPromptInput();
+// ---------- wiring ----------
+document.addEventListener("DOMContentLoaded", () => {
+  const { sendBtn, prompt, pingBtn, testBtn } = findEl();
 
-  if (!btn) setStatus("HUD WARN: can't find send button. Add id='sendBtn' to your button.");
-  else {
-    btn.addEventListener("click", (e) => {
+  // Send button
+  if (sendBtn) {
+    sendBtn.addEventListener("click", (e) => {
       e.preventDefault();
       sendPrompt();
     });
   }
 
-  // Enter to send (textarea: Enter sends, Shift+Enter newline)
-  if (input) {
-    input.addEventListener("keydown", (e) => {
+  // Enter to send (Shift+Enter for newline)
+  if (prompt) {
+    prompt.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         sendPrompt();
@@ -153,16 +190,21 @@ function wireUp() {
     });
   }
 
-  // If there is a form, also hook submit
-  const form = btn?.closest("form") || input?.closest("form");
-  if (form) {
-    form.addEventListener("submit", (e) => {
+  // Optional Ping button
+  if (pingBtn) {
+    pingBtn.addEventListener("click", (e) => {
       e.preventDefault();
-      sendPrompt();
+      sendPrompt("ping");
+    });
+  }
+
+  // Optional Test API button
+  if (testBtn) {
+    testBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      testAPI();
     });
   }
 
   setStatus("HUD: ready (type ping + tap Send)");
-}
-
-document.addEventListener("DOMContentLoaded", wireUp);
+});
