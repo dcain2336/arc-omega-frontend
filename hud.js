@@ -1,54 +1,45 @@
-// hud.js — DROP IN FULL FILE
-
+// hud.js (works with YOUR index.html IDs)
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
 
 const $ = (id) => document.getElementById(id);
 
-function sys(msg) {
+function logSys(msg) {
   const el = $("sysLog");
   if (!el) return;
   const line = document.createElement("div");
-  line.className = "sys-line";
   line.textContent = msg;
   el.appendChild(line);
   el.scrollTop = el.scrollHeight;
 }
 
-function addMessage(role, text) {
+function addMsg(role, text) {
   const chat = $("chat");
   if (!chat) return;
 
-  const card = document.createElement("div");
-  card.className = `msg ${role}`;
+  const wrap = document.createElement("div");
+  wrap.className = "msg " + role;
 
-  const label = document.createElement("div");
-  label.className = "msg-label";
-  label.textContent = role.toUpperCase();
+  // Simple bubble (no dependency on old CSS class names)
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.textContent = text;
 
-  const body = document.createElement("div");
-  body.className = "msg-body";
-  body.textContent = text;
-
-  card.appendChild(label);
-  card.appendChild(body);
-  chat.appendChild(card);
+  wrap.appendChild(bubble);
+  chat.appendChild(wrap);
   chat.scrollTop = chat.scrollHeight;
 }
 
-async function postJSON(path, payload) {
-  const res = await fetch(API_BASE + path, {
+async function postQuery(prompt, user_id = "web") {
+  const res = await fetch(`${API_BASE}/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ prompt, user_id }),
   });
 
   const txt = await res.text();
   let data;
-  try {
-    data = JSON.parse(txt);
-  } catch {
-    data = { raw: txt };
-  }
+  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+
   return { ok: res.ok, status: res.status, data };
 }
 
@@ -59,17 +50,17 @@ async function sendPrompt() {
   const prompt = (input.value || "").trim();
   if (!prompt) return;
 
-  addMessage("user", prompt);
+  addMsg("user", prompt);
   input.value = "";
 
-  sys("Sending /query …");
+  logSys("Sending…");
 
   try {
-    const r = await postJSON("/query", { prompt, user_id: "web" });
+    const r = await postQuery(prompt, "web");
 
     if (!r.ok) {
-      addMessage("error", `Error ${r.status}\n${JSON.stringify(r.data, null, 2)}`);
-      sys(`Error ${r.status}`);
+      addMsg("error", `Error ${r.status}\n${JSON.stringify(r.data, null, 2)}`);
+      logSys(`Error ${r.status}`);
       return;
     }
 
@@ -79,53 +70,83 @@ async function sendPrompt() {
       r.data?.raw ??
       JSON.stringify(r.data);
 
-    // show which upstream answered if the Worker returned it
-    // (we can’t read response headers in this simple helper, but your Worker sets X-ARC-Upstream—
-    // you’ll see it when testing with a REST client; UI can be upgraded later)
-    addMessage("arc", reply);
-    sys("OK");
+    addMsg("arc", reply);
+    logSys("OK");
   } catch (e) {
-    addMessage("error", `NETWORK ERROR: ${String(e)}`);
-    sys(`NETWORK ERROR: ${String(e)}`);
+    addMsg("error", `NETWORK ERROR: ${String(e)}`);
+    logSys(`NETWORK ERROR: ${String(e)}`);
   }
 }
 
-async function testAPI() {
-  sys("Testing API /test …");
+async function testApi() {
   try {
-    const res = await fetch(API_BASE + "/test", { method: "GET" });
+    const res = await fetch(`${API_BASE}/test`);
     const txt = await res.text();
-    sys(`API /test -> ${res.status}`);
-    addMessage("system", txt);
+    logSys(`/test -> ${res.status}`);
+    addMsg("arc", txt);
   } catch (e) {
-    addMessage("error", `NETWORK ERROR: ${String(e)}`);
-    sys(`NETWORK ERROR: ${String(e)}`);
+    logSys(`Test failed: ${String(e)}`);
   }
 }
 
-// Panels + controls (your Phase 1 UI)
-function togglePanel(id, show) {
-  const p = $(id);
-  if (!p) return;
-  p.classList.toggle("hidden", !show);
-  p.setAttribute("aria-hidden", show ? "false" : "true");
+// Panels + UI controls
+function wirePanels() {
+  const btnSessions = $("btnSessions");
+  const panelSessions = $("panelSessions");
+  const btnCloseSessions = $("btnCloseSessions");
+
+  const btnTools = $("btnTools");
+  const panelTools = $("panelTools");
+  const btnCloseTools = $("btnCloseTools");
+
+  const btnBlackout = $("btnBlackout");
+  const blackout = $("blackout");
+
+  function toggle(el) {
+    if (!el) return;
+    el.classList.toggle("hidden");
+  }
+
+  if (btnSessions && panelSessions) btnSessions.onclick = () => toggle(panelSessions);
+  if (btnCloseSessions && panelSessions) btnCloseSessions.onclick = () => panelSessions.classList.add("hidden");
+
+  if (btnTools && panelTools) btnTools.onclick = () => toggle(panelTools);
+  if (btnCloseTools && panelTools) btnCloseTools.onclick = () => panelTools.classList.add("hidden");
+
+  if (btnBlackout && blackout) btnBlackout.onclick = () => toggle(blackout);
+
+  // Tool placeholders
+  const w = $("btnToolWeather");
+  const n = $("btnToolNews");
+  const m = $("btnToolMarkets");
+  const t = $("btnToolWorldTime");
+  if (w) w.onclick = () => logSys("Weather tool (mock)");
+  if (n) n.onclick = () => logSys("News tool (mock)");
+  if (m) m.onclick = () => logSys("Markets tool (mock)");
+  if (t) t.onclick = () => logSys("World Time tool (mock)");
+
+  const clear = $("btnClearChat");
+  if (clear) clear.onclick = () => { const c = $("chat"); if (c) c.innerHTML = ""; logSys("Chat cleared"); };
 }
 
-function setupUI() {
-  // meta pills
-  const metaFrontend = $("metaFrontend");
-  const metaApi = $("metaApi");
-  const metaHf = $("metaHf");
+function setMeta() {
+  const mf = $("metaFrontend");
+  const ma = $("metaApi");
+  const mh = $("metaHf");
+  if (mf) mf.textContent = window.location.host;
+  if (ma) ma.textContent = API_BASE;
+  if (mh) mh.textContent = "via Worker (Render/HF failover)";
+}
 
-  if (metaFrontend) metaFrontend.textContent = location.host;
-  if (metaApi) metaApi.textContent = API_BASE;
-  if (metaHf) metaHf.textContent = "via Worker (Render/HF failover)";
+document.addEventListener("DOMContentLoaded", () => {
+  setMeta();
+  wirePanels();
 
-  // composer wiring
-  const sendBtn = $("send");
+  // Send wiring (THIS is what was broken for you earlier)
+  const btnSend = $("send");
   const input = $("prompt");
 
-  if (sendBtn) sendBtn.addEventListener("click", sendPrompt);
+  if (btnSend) btnSend.onclick = sendPrompt;
 
   if (input) {
     input.addEventListener("keydown", (e) => {
@@ -136,50 +157,11 @@ function setupUI() {
     });
   }
 
-  // system buttons
+  // System buttons
   const btnPing = $("btnPing");
   const btnTest = $("btnTest");
-  if (btnPing) btnPing.addEventListener("click", () => {
-    if (input) input.value = "ping";
-    sendPrompt();
-  });
-  if (btnTest) btnTest.addEventListener("click", testAPI);
+  if (btnPing) btnPing.onclick = () => { $("prompt").value = "ping"; sendPrompt(); };
+  if (btnTest) btnTest.onclick = testApi;
 
-  // sessions panel
-  const btnSessions = $("btnSessions");
-  const btnCloseSessions = $("btnCloseSessions");
-  if (btnSessions) btnSessions.addEventListener("click", () => togglePanel("panelSessions", true));
-  if (btnCloseSessions) btnCloseSessions.addEventListener("click", () => togglePanel("panelSessions", false));
-
-  // tools panel
-  const btnTools = $("btnTools");
-  const btnCloseTools = $("btnCloseTools");
-  if (btnTools) btnTools.addEventListener("click", () => togglePanel("panelTools", true));
-  if (btnCloseTools) btnCloseTools.addEventListener("click", () => togglePanel("panelTools", false));
-
-  // blackout
-  const btnBlackout = $("btnBlackout");
-  const blackout = $("blackout");
-  if (btnBlackout && blackout) {
-    btnBlackout.addEventListener("click", () => {
-      blackout.classList.toggle("hidden");
-      blackout.setAttribute("aria-hidden", blackout.classList.contains("hidden") ? "true" : "false");
-    });
-    blackout.addEventListener("click", () => blackout.classList.add("hidden"));
-  }
-
-  // clear chat
-  const btnClearChat = $("btnClearChat");
-  if (btnClearChat) {
-    btnClearChat.addEventListener("click", () => {
-      const chat = $("chat");
-      if (chat) chat.innerHTML = "";
-      sys("Chat cleared.");
-    });
-  }
-
-  // initial message
-  sys("HUD: ready (type ping + tap Send)");
-}
-
-document.addEventListener("DOMContentLoaded", setupUI);
+  logSys("HUD: ready (type ping + tap Send)");
+});
