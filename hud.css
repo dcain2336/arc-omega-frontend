@@ -96,7 +96,10 @@ html,body{height:100%; margin:0; background:var(--bg); color:var(--fg); font-fam
   max-width: 86%;
   height: auto;
   display:block;
-  transform-origin: 50% 50%;
+
+  /* ✅ crisp edges */
+  shape-rendering: geometricPrecision;
+  text-rendering: geometricPrecision;
 }
 
 /* Only pulse when JS adds class */
@@ -112,7 +115,7 @@ html,body{height:100%; margin:0; background:var(--bg); color:var(--fg); font-fam
 .chatFeed{ padding: 12px; overflow:auto; flex:1; max-height: 520px; }
 .msg{
   border: 1px solid rgba(69,214,255,.12);
-  background: var(--panel2);
+  background: rgba(255,255,255,.02);
   border-radius: 14px;
   padding: 10px;
   margin-bottom: 10px;
