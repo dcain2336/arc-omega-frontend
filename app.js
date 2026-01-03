@@ -1,277 +1,185 @@
-// =====================
-// CONFIG
-// =====================
+const CFG = window.ARC_CONFIG || {};
+const BACKEND = (CFG.BACKEND_URL || "").replace(/\/+$/, "");
 
-// Put your preferred backends first. Frontend will try them in order.
-// If a base returns non-OK, it moves to the next.
-const API_BASES = [
-  "https://arc-omega-api.dcain1.workers.dev",      // Worker (preferred if stable)
-  "https://arc-omega-backend.onrender.com"         // Render fallback
-];
+// --------- Ticker speed (tweak this one number) ---------
+// px per second. Try 70–120 range.
+// If it feels too fast: lower it. Too slow: raise it.
+const TICKER_PX_PER_SEC = 95;
 
-// If you want the ticker slightly faster/slower without touching CSS,
-// you can override duration here (in seconds). null => use CSS.
-const TICKER_SECONDS_OVERRIDE = 30; // try 28-38 range; set null to disable override.
+const el = (id) => document.getElementById(id);
+const logEl = el("log");
+const apiUrlText = el("apiUrlText");
+const upstreamEl = el("upstream");
 
-// =====================
-// Helpers
-// =====================
-const $ = (id) => document.getElementById(id);
+apiUrlText.textContent = BACKEND || "(not set)";
 
-function log(line) {
-  const el = $("consoleOut");
-  el.textContent = (el.textContent ? el.textContent + "\n" : "") + line;
+function log(line){
+  logEl.textContent = (logEl.textContent + line + "\n").trimStart();
 }
 
-async function fetchFirstOk(path, opts = {}) {
-  let lastErr = null;
-  for (const base of API_BASES) {
-    try {
-      const url = base.replace(/\/$/, "") + path;
-      const res = await fetch(url, opts);
-      if (!res.ok) {
-        lastErr = `${base}${path} -> HTTP ${res.status}`;
-        continue;
-      }
-      $("apiBaseLabel").textContent = base;
-      return { base, res, json: await res.json() };
-    } catch (e) {
-      lastErr = `${base}${path} -> ${String(e)}`;
-    }
+async function fetchJSON(url, opts){
+  const r = await fetch(url, opts);
+  if(!r.ok){
+    const t = await r.text().catch(()=> "");
+    throw new Error(`HTTP ${r.status} ${t}`);
   }
-  throw new Error(lastErr || "all API bases failed");
+  return await r.json();
 }
 
-function pad2(n){ return String(n).padStart(2, "0"); }
-
-// =====================
-// Time ticker (NO API)
-// =====================
-const TIME_ZONES = [
-  { label: "Local", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
-  { label: "ET",    tz: "America/New_York" },
-  { label: "CT",    tz: "America/Chicago" },
-  { label: "MT",    tz: "America/Denver" },
-  { label: "PT",    tz: "America/Los_Angeles" },
-  { label: "UTC",   tz: "UTC" },
-  { label: "London",tz: "Europe/London" },
-  { label: "Paris", tz: "Europe/Paris" },
-  { label: "Dubai", tz: "Asia/Dubai" },
-  { label: "Manila",tz: "Asia/Manila" },
-  { label: "Guam",  tz: "Pacific/Guam" },
-  { label: "Seoul", tz: "Asia/Seoul" },
-  { label: "Tokyo", tz: "Asia/Tokyo" }
-];
-
-function formatTime(tz) {
-  const d = new Date();
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-    timeZone: tz
-  });
-  return fmt.format(d);
-}
-
-function updateTicker() {
-  const parts = TIME_ZONES.map(z => `${z.label} ${formatTime(z.tz)}`);
-  $("timeTicker").textContent = parts.join("  •  ");
-}
-
-// =====================
-// Weather (Open-Meteo + reverse geocode)
-// =====================
-async function getBrowserLocation() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) reject(new Error("Geolocation not supported"));
-    navigator.geolocation.getCurrentPosition(
-      pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-      err => reject(err),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 }
-    );
-  });
-}
-
-async function reverseGeocode(lat, lon) {
-  // Nominatim (free). Be polite.
-  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
-  const res = await fetch(url, { headers: { "Accept": "application/json" } });
-  if (!res.ok) return null;
-  const j = await res.json();
-  const a = j.address || {};
-  return a.neighbourhood || a.suburb || a.city_district || a.village || a.town || a.city || a.county || a.state || null;
-}
-
-async function loadWeather() {
-  try {
-    const loc = await getBrowserLocation();
-    const url =
-      `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}` +
-      `&current=temperature_2m,wind_speed_10m,weather_code&temperature_unit=fahrenheit&wind_speed_unit=mph`;
-
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
-    const j = await res.json();
-
-    const cur = j.current || {};
-    const temp = (cur.temperature_2m ?? "—");
-    const wind = (cur.wind_speed_10m ?? "—");
-
-    const place = await reverseGeocode(loc.lat, loc.lon);
-    const placeLabel = place ? `${place} · ` : "";
-
-    $("weatherLine").textContent = `${placeLabel}${temp}°F · Wind ${wind} mph`;
-    $("weatherMeta").textContent = `Source: Open-Meteo (browser geolocation)`;
-  } catch (e) {
-    $("weatherLine").textContent = "Weather error";
-    $("weatherMeta").textContent = String(e);
+// ---------------- Ping / upstream ----------------
+async function ping(){
+  if(!BACKEND) return;
+  try{
+    const j = await fetchJSON(`${BACKEND}/ping`);
+    upstreamEl.textContent = "ok";
+    log(`> Ping\n${BACKEND}/ping -> ${JSON.stringify(j)}`);
+  }catch(e){
+    upstreamEl.textContent = "error";
+    log(`> Ping\nsend error: ${e}`);
   }
 }
 
-// =====================
-// News (GDELT 2.1, no key)
-// =====================
-async function loadNews() {
-  try {
-    // Major geopolitics-ish query. You can tweak terms.
-    const query = encodeURIComponent(
-      '(war OR conflict OR missile OR sanctions OR coup OR "state of emergency" OR earthquake OR hurricane OR "major incident")'
-    );
+async function sendQuery(text){
+  try{
+    const payload = { message: text, session_id: "web" };
+    const j = await fetchJSON(`${BACKEND}/query`, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(payload)
+    });
+    log(`> ${text}\n${j.ok ? j.text : ("ERR: "+j.error)}\n`);
+  }catch(e){
+    log(`send error: ${e}`);
+  }
+}
+
+el("send").addEventListener("click", ()=>{
+  const v = el("msg").value.trim();
+  if(!v) return;
+  el("msg").value = "";
+  sendQuery(v);
+});
+
+el("msg").addEventListener("keydown", (e)=>{
+  if(e.key === "Enter"){
+    el("send").click();
+  }
+});
+
+// ---------------- Weather (Open-Meteo) ----------------
+async function loadWeather(){
+  const w = el("weatherText");
+  try{
+    w.textContent = "Getting location…";
+    const pos = await new Promise((resolve, reject)=>{
+      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy:false, timeout: 8000 });
+    });
+
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
 
     const url =
-      `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}` +
-      `&mode=ArtList&format=json&maxrecords=8&sort=HybridRel`;
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `&current=temperature_2m,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph`;
 
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`GDELT HTTP ${res.status}`);
-    const j = await res.json();
+    const j = await fetchJSON(url);
+    const temp = j?.current?.temperature_2m;
+    const wind = j?.current?.wind_speed_10m;
 
-    const arts = (j.articles || []).slice(0, 5);
-    if (!arts.length) {
-      $("newsLine").textContent = "No headlines returned.";
-      $("newsMeta").textContent = "Source: GDELT";
+    w.textContent = `Your area · ${Math.round(temp)}°F · Wind ${wind.toFixed(1)} mph`;
+  }catch(e){
+    w.textContent = "Weather error";
+    console.warn(e);
+  }
+}
+
+// ---------------- News (GDELT) ----------------
+async function loadNews(){
+  const n = el("newsText");
+  try{
+    const url =
+      "https://api.gdeltproject.org/api/v2/doc/doc?query=conflict%20OR%20cyber%20OR%20technology&mode=ArtList&format=json&maxrecords=5";
+
+    const j = await fetchJSON(url);
+    const arts = j?.articles || [];
+    if(!arts.length){
+      n.textContent = "No headlines returned.";
       return;
     }
-
-    // Build a single-line ticker-ish display
-    const titles = arts.map(a => a.title).filter(Boolean);
-    $("newsLine").textContent = titles.join("  •  ");
-    $("newsMeta").textContent = "Source: GDELT 2.1 (public)";
-  } catch (e) {
-    $("newsLine").textContent = "News error";
-    $("newsMeta").textContent = String(e);
+    // show titles only, simple
+    n.innerHTML = arts.map(a => (a.title || "").trim()).filter(Boolean).join(" · ");
+  }catch(e){
+    n.textContent = "News error";
+    console.warn(e);
   }
 }
 
-// =====================
-// Globe
-// =====================
-async function initGlobe() {
-  const mount = $("globeMount");
+// ---------------- World time ticker ----------------
+const ZONES = [
+  ["CT", "America/Chicago"],
+  ["ET", "America/New_York"],
+  ["MT", "America/Denver"],
+  ["PT", "America/Los_Angeles"],
+  ["UTC", "UTC"],
+  ["London", "Europe/London"],
+  ["Paris", "Europe/Paris"],
+  ["Dubai", "Asia/Dubai"],
+  ["Manila", "Asia/Manila"],
+  ["Guam", "Pacific/Guam"],
+  ["Seoul", "Asia/Seoul"],
+  ["Tokyo", "Asia/Tokyo"],
+];
 
-  const world = Globe()(mount)
-    .globeImageUrl("https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg")
-    .bumpImageUrl("https://unpkg.com/three-globe/example/img/earth-topology.png")
-    .backgroundImageUrl("https://unpkg.com/three-globe/example/img/night-sky.png")
-    .atmosphereColor("#00a6b4")
-    .atmosphereAltitude(0.18);
-
-  // try to pin to browser location
-  try {
-    const loc = await getBrowserLocation();
-    world
-      .pointsData([{ lat: loc.lat, lng: loc.lon, size: 0.6, color: "#35d07f" }])
-      .pointAltitude("size")
-      .pointColor("color");
-
-    world.pointOfView({ lat: loc.lat, lng: loc.lon, altitude: 1.9 }, 1200);
-    $("globeMeta").textContent = "Pinned to your location (browser geolocation).";
-  } catch {
-    world.pointOfView({ lat: 15, lng: 120, altitude: 2.2 }, 1200);
-    $("globeMeta").textContent = "World view (no location permission).";
-  }
-
-  // Resize handling
-  function resize() {
-    const w = mount.clientWidth;
-    const h = mount.clientHeight;
-    world.width(w);
-    world.height(h);
-  }
-  window.addEventListener("resize", resize);
-  resize();
+function fmtTime(tz){
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit", minute:"2-digit", second:"2-digit",
+    hour12: false,
+    timeZone: tz
+  }).format(new Date());
 }
 
-// =====================
-// Command Center: Ping + Send
-// =====================
-async function doPing() {
-  try {
-    log("> Ping");
-    const { base, json } = await fetchFirstOk("/ping", { method: "GET" });
-    $("upstreamLabel").textContent = "ok";
-    log(`${base}/ping -> ${JSON.stringify(json)}`);
-  } catch (e) {
-    $("upstreamLabel").textContent = "error";
-    log(`send error: ${String(e)}`);
-  }
+function buildTickerText(){
+  return ZONES.map(([label, tz]) => `${label} ${fmtTime(tz)}`).join("  •  ");
 }
 
-async function doSend() {
-  const msg = ($("chatIn").value || "").trim();
-  if (!msg) return;
+function startTicker(){
+  const ticker = el("timeTicker");
+  const updateText = ()=>{
+    ticker.textContent = buildTickerText();
+  };
+  updateText();
+  setInterval(updateText, 1000);
 
-  try {
-    log(`> ${msg}`);
+  // animate by setting duration based on content width
+  const applyAnim = ()=>{
+    // reset animation to recalc
+    ticker.style.animation = "none";
+    const contentWidth = ticker.getBoundingClientRect().width;
+    const outerWidth = ticker.parentElement.getBoundingClientRect().width;
+    const travel = contentWidth + outerWidth;
+    const duration = Math.max(10, travel / TICKER_PX_PER_SEC);
 
-    const body = JSON.stringify({
-      message: msg,
-      session_id: "web"
-    });
+    // force reflow
+    void ticker.offsetWidth;
+    ticker.style.animation = `scroll-left ${duration}s linear infinite`;
+  };
 
-    const { base, json } = await fetchFirstOk("/query", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body
-    });
-
-    if (json && json.text) {
-      log(json.text);
-    } else {
-      log(`${base}/query -> ${JSON.stringify(json)}`);
-    }
-  } catch (e) {
-    log(`send error: ${String(e)}`);
-  }
+  // apply now and on resize
+  setTimeout(applyAnim, 50);
+  window.addEventListener("resize", applyAnim);
 }
 
-// =====================
-// Boot
-// =====================
-(function main() {
-  if (TICKER_SECONDS_OVERRIDE !== null) {
-    // override ticker animation duration at runtime
-    $("timeTicker").style.animationDuration = `${TICKER_SECONDS_OVERRIDE}s`;
-  }
+const styleTag = document.createElement("style");
+styleTag.textContent = `
+@keyframes scroll-left {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
+}
+`;
+document.head.appendChild(styleTag);
 
-  updateTicker();
-  setInterval(updateTicker, 1000);
-
-  loadWeather();
-  // refresh weather/news periodically (resilient + light)
-  setInterval(loadWeather, 10 * 60 * 1000); // 10 min
-
-  loadNews();
-  setInterval(loadNews, 12 * 60 * 1000); // 12 min
-
-  initGlobe();
-
-  $("sendBtn").addEventListener("click", doSend);
-  $("chatIn").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") doSend();
-  });
-
-  doPing();
-})();
+// ---------------- Init ----------------
+ping();
+loadWeather();
+loadNews();
+startTicker();
