@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>ARC OMEGA</title>
 
-  <!-- Leaflet (map) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin="" />
@@ -13,10 +12,8 @@
   <link rel="stylesheet" href="./hud.css" />
 </head>
 <body>
-  <!-- Blackout overlay (panic / privacy) -->
   <div id="blackout" class="blackout hidden" aria-hidden="true"></div>
 
-  <!-- Top bar -->
   <header class="topbar">
     <div class="topbar-left">
       <button class="iconbtn" id="btnSessions" title="Sessions / Files">☰</button>
@@ -39,77 +36,52 @@
     </div>
   </header>
 
-  <!-- Slide-in: Sessions / Files -->
   <aside class="panel panel-left hidden" id="panelSessions" aria-hidden="true">
     <div class="panel-head">
       <div class="panel-title">Sessions / Files</div>
       <button class="iconbtn" id="btnCloseSessions" title="Close">✕</button>
     </div>
     <div class="panel-body">
-      <div class="panel-section">
-        <div class="panel-label">Sessions</div>
-        <div class="list" id="sessionList"></div>
-        <button class="btn ghost" id="btnNewSession">New session</button>
-      </div>
-
-      <div class="panel-section">
-        <div class="panel-label">Files (placeholder)</div>
-        <div class="muted">This will become your generated documents / uploads browser later.</div>
-      </div>
+      <div class="panel-label">Sessions</div>
+      <div class="muted">Coming soon.</div>
     </div>
   </aside>
 
-  <!-- Slide-in: Tools -->
   <aside class="panel panel-right hidden" id="panelTools" aria-hidden="true">
     <div class="panel-head">
       <div class="panel-title">Tools</div>
       <button class="iconbtn" id="btnCloseTools" title="Close">✕</button>
     </div>
     <div class="panel-body">
-      <div class="panel-section">
-        <div class="panel-label">Quick Tools</div>
-
-        <button class="btn" id="btnToolWeather">Refresh Weather</button>
-        <button class="btn" id="btnToolNews">Refresh News</button>
-        <button class="btn" id="btnToolWorldTime">Refresh World Time</button>
-
-        <div class="divider"></div>
-
-        <div class="panel-label">System</div>
-        <button class="btn ghost" id="btnClearChat">Clear current chat view</button>
-      </div>
+      <div class="panel-label">Quick Tools</div>
+      <button class="btn" id="btnToolWeather">Refresh Weather</button>
+      <button class="btn" id="btnToolNews">Refresh News</button>
+      <button class="btn" id="btnToolWorldTime">Refresh World Time</button>
+      <div class="divider"></div>
+      <div class="panel-label">System</div>
+      <button class="btn ghost" id="btnClearChat">Clear current chat view</button>
     </div>
   </aside>
 
-  <!-- Main layout -->
   <main class="shell">
-    <!-- LEFT COLUMN: ARC + War Chest -->
     <section class="col col-left">
       <div class="card arc-card">
         <div class="card-title">ARC</div>
-
         <div class="arc-wrap">
           <div class="arc-orb" id="arcOrb" aria-hidden="true">
             <svg class="arc-svg" viewBox="0 0 200 200" role="img" aria-label="ARC Reactor">
               <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(15,20,28,.95)" stroke-width="14"/>
-              <path d="M 56 72 L 144 72 L 100 152 Z"
-                    fill="none" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linejoin="round"/>
-              <path d="M 78 92 L 122 92 L 100 132 Z"
-                    fill="none" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linejoin="round"/>
-
+              <path d="M 56 72 L 144 72 L 100 152 Z" fill="none" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linejoin="round"/>
+              <path d="M 78 92 L 122 92 L 100 132 Z" fill="none" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linejoin="round"/>
               <line x1="56" y1="72" x2="36" y2="58" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
               <line x1="144" y1="72" x2="164" y2="58" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
               <line x1="100" y1="152" x2="100" y2="178" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-
               <line x1="70" y1="98" x2="48" y2="108" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
               <line x1="78" y1="118" x2="56" y2="132" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-
               <line x1="130" y1="98" x2="152" y2="108" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
               <line x1="122" y1="118" x2="144" y2="132" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-
               <line x1="78" y1="72" x2="70" y2="44" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
               <line x1="122" y1="72" x2="130" y2="44" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-
               <line x1="78" y1="92" x2="56" y2="72" stroke="rgba(15,20,28,.95)" stroke-width="8" stroke-linecap="round"/>
               <line x1="122" y1="92" x2="144" y2="72" stroke="rgba(15,20,28,.95)" stroke-width="8" stroke-linecap="round"/>
               <line x1="100" y1="132" x2="100" y2="152" stroke="rgba(15,20,28,.95)" stroke-width="8" stroke-linecap="round"/>
@@ -117,8 +89,8 @@
           </div>
 
           <div class="arc-status">
-            <div class="arc-line"><span class="muted">State:</span> <span id="arcState">ONLINE</span></div>
-            <div class="arc-line"><span class="muted">Council:</span> <span id="arcCouncil">RUNNING</span></div>
+            <div class="arc-line"><span class="muted">State:</span> <b>ONLINE</b></div>
+            <div class="arc-line"><span class="muted">Council:</span> <b>RUNNING</b></div>
           </div>
         </div>
       </div>
@@ -126,7 +98,7 @@
       <div class="card">
         <div class="card-title">War Chest</div>
         <div class="war">
-          <div class="war-amt" id="warAmt">$0.00</div>
+          <div class="war-amt">$0.00</div>
           <div class="muted">Placeholder. Later: budgets, giving, mission support, etc.</div>
         </div>
       </div>
@@ -142,33 +114,29 @@
         </div>
         <div class="ticker">
           <div class="ticker-title">World Time</div>
-          <div class="ticker-body" id="tickerTime">—</div>
+          <div class="ticker-scroll">
+            <div class="track" id="tickerTimeTrack">—</div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- CENTER COLUMN: Chat -->
     <section class="col col-center">
       <div class="card chat-card">
         <div class="card-title">Command Center</div>
-
         <div class="meta-lines">
           <div class="meta-pill">API: <span id="metaApi">—</span></div>
           <div class="meta-pill">Upstream: <span id="metaUpstream">—</span></div>
         </div>
-
         <div class="chat" id="chat"></div>
       </div>
     </section>
 
-    <!-- RIGHT COLUMN: Map -->
     <section class="col col-right">
       <div class="card globe-card">
         <div class="card-title">Map</div>
         <div id="map" class="map"></div>
-        <div class="muted globe-caption" id="mapCaption">
-          World view fallback. If you allow location, it pins you.
-        </div>
+        <div class="muted globe-caption" id="mapCaption">World view fallback. If you allow location, it pins you.</div>
       </div>
 
       <div class="card">
@@ -182,13 +150,11 @@
     </section>
   </main>
 
-  <!-- Bottom fixed composer -->
   <footer class="composer">
     <textarea id="prompt" class="prompt" rows="1" placeholder="Type to ARC…" autocomplete="off" spellcheck="false"></textarea>
     <button id="send" class="send">Send</button>
   </footer>
 
-  <!-- Leaflet -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
           crossorigin=""></script>
