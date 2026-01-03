@@ -1,235 +1,277 @@
-// app.js
+// =====================
+// CONFIG
+// =====================
 
-// Use Worker as the primary aggregation layer:
-const API_BASE = "https://arc-omega-api.dcain1.workers.dev"; // change if needed
-document.getElementById("apiBaseLabel").textContent = API_BASE;
+// Put your preferred backends first. Frontend will try them in order.
+// If a base returns non-OK, it moves to the next.
+const API_BASES = [
+  "https://arc-omega-api.dcain1.workers.dev",      // Worker (preferred if stable)
+  "https://arc-omega-backend.onrender.com"         // Render fallback
+];
 
-const weatherLine = document.getElementById("weatherLine");
-const newsLine = document.getElementById("newsLine");
-const newsList = document.getElementById("newsList");
-const timeTicker = document.getElementById("timeTicker");
-const consoleEl = document.getElementById("console");
+// If you want the ticker slightly faster/slower without touching CSS,
+// you can override duration here (in seconds). null => use CSS.
+const TICKER_SECONDS_OVERRIDE = 30; // try 28-38 range; set null to disable override.
 
-const chatInput = document.getElementById("chatInput");
-const sendBtn = document.getElementById("sendBtn");
+// =====================
+// Helpers
+// =====================
+const $ = (id) => document.getElementById(id);
 
-const SESSION_ID_KEY = "arc_session_id";
-let sessionId = localStorage.getItem(SESSION_ID_KEY);
-if (!sessionId) {
-  sessionId = "s_" + Math.random().toString(36).slice(2);
-  localStorage.setItem(SESSION_ID_KEY, sessionId);
+function log(line) {
+  const el = $("consoleOut");
+  el.textContent = (el.textContent ? el.textContent + "\n" : "") + line;
 }
 
-function logLine(s) {
-  const p = document.createElement("div");
-  p.textContent = s;
-  consoleEl.appendChild(p);
-  consoleEl.scrollTop = consoleEl.scrollHeight;
-}
-
-async function tryFetchJson(paths) {
+async function fetchFirstOk(path, opts = {}) {
   let lastErr = null;
-  for (const path of paths) {
+  for (const base of API_BASES) {
     try {
-      const url = `${API_BASE}${path}`;
-      const r = await fetch(url, { method: "GET" });
-      if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-      return await r.json();
+      const url = base.replace(/\/$/, "") + path;
+      const res = await fetch(url, opts);
+      if (!res.ok) {
+        lastErr = `${base}${path} -> HTTP ${res.status}`;
+        continue;
+      }
+      $("apiBaseLabel").textContent = base;
+      return { base, res, json: await res.json() };
     } catch (e) {
-      lastErr = e;
+      lastErr = `${base}${path} -> ${String(e)}`;
     }
   }
-  throw lastErr || new Error("fetch failed");
+  throw new Error(lastErr || "all API bases failed");
 }
 
-function pickFirst(obj, keys, fallback = undefined) {
-  for (const k of keys) {
-    if (obj && obj[k] !== undefined && obj[k] !== null) return obj[k];
-  }
-  return fallback;
+function pad2(n){ return String(n).padStart(2, "0"); }
+
+// =====================
+// Time ticker (NO API)
+// =====================
+const TIME_ZONES = [
+  { label: "Local", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
+  { label: "ET",    tz: "America/New_York" },
+  { label: "CT",    tz: "America/Chicago" },
+  { label: "MT",    tz: "America/Denver" },
+  { label: "PT",    tz: "America/Los_Angeles" },
+  { label: "UTC",   tz: "UTC" },
+  { label: "London",tz: "Europe/London" },
+  { label: "Paris", tz: "Europe/Paris" },
+  { label: "Dubai", tz: "Asia/Dubai" },
+  { label: "Manila",tz: "Asia/Manila" },
+  { label: "Guam",  tz: "Pacific/Guam" },
+  { label: "Seoul", tz: "Asia/Seoul" },
+  { label: "Tokyo", tz: "Asia/Tokyo" }
+];
+
+function formatTime(tz) {
+  const d = new Date();
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: tz
+  });
+  return fmt.format(d);
 }
 
-async function refreshWeather() {
+function updateTicker() {
+  const parts = TIME_ZONES.map(z => `${z.label} ${formatTime(z.tz)}`);
+  $("timeTicker").textContent = parts.join("  •  ");
+}
+
+// =====================
+// Weather (Open-Meteo + reverse geocode)
+// =====================
+async function getBrowserLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) reject(new Error("Geolocation not supported"));
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      err => reject(err),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 }
+    );
+  });
+}
+
+async function reverseGeocode(lat, lon) {
+  // Nominatim (free). Be polite.
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+  const res = await fetch(url, { headers: { "Accept": "application/json" } });
+  if (!res.ok) return null;
+  const j = await res.json();
+  const a = j.address || {};
+  return a.neighbourhood || a.suburb || a.city_district || a.village || a.town || a.city || a.county || a.state || null;
+}
+
+async function loadWeather() {
   try {
-    const data = await tryFetchJson(["/weather", "/api/weather", "/v1/weather"]);
+    const loc = await getBrowserLocation();
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}` +
+      `&current=temperature_2m,wind_speed_10m,weather_code&temperature_unit=fahrenheit&wind_speed_unit=mph`;
 
-    if (data && data.ok === false) throw new Error(data.error || "weather error");
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
+    const j = await res.json();
 
-    // tolerate different schemas
-    const loc = pickFirst(data, ["location", "city", "place", "name"], "Local");
-    const tf = pickFirst(data, ["temp_f", "tempF", "temp", "temperature_f"], "—");
-    const desc = pickFirst(data, ["desc", "description", "summary", "conditions"], "—");
-    const rh = pickFirst(data, ["rh", "humidity", "humid"], "—");
-    const wind = pickFirst(data, ["wind_mph", "wind", "windSpeed", "wind_speed_mph"], "—");
+    const cur = j.current || {};
+    const temp = (cur.temperature_2m ?? "—");
+    const wind = (cur.wind_speed_10m ?? "—");
 
-    weatherLine.textContent = `${loc} · ${tf}°F · ${desc} · RH ${rh}% · Wind ${wind} mph`;
-    weatherLine.classList.remove("muted");
+    const place = await reverseGeocode(loc.lat, loc.lon);
+    const placeLabel = place ? `${place} · ` : "";
+
+    $("weatherLine").textContent = `${placeLabel}${temp}°F · Wind ${wind} mph`;
+    $("weatherMeta").textContent = `Source: Open-Meteo (browser geolocation)`;
   } catch (e) {
-    weatherLine.textContent = `Weather error`;
-    weatherLine.classList.add("muted");
+    $("weatherLine").textContent = "Weather error";
+    $("weatherMeta").textContent = String(e);
   }
 }
 
-async function refreshNews() {
+// =====================
+// News (GDELT 2.1, no key)
+// =====================
+async function loadNews() {
   try {
-    const data = await tryFetchJson(["/news", "/api/news", "/v1/news"]);
+    // Major geopolitics-ish query. You can tweak terms.
+    const query = encodeURIComponent(
+      '(war OR conflict OR missile OR sanctions OR coup OR "state of emergency" OR earthquake OR hurricane OR "major incident")'
+    );
 
-    if (data && data.ok === false) throw new Error(data.error || "news error");
+    const url =
+      `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}` +
+      `&mode=ArtList&format=json&maxrecords=8&sort=HybridRel`;
 
-    // tolerate: headlines array, articles array, or "data" object
-    const headlines =
-      pickFirst(data, ["headlines"], null) ||
-      (Array.isArray(data?.articles) ? data.articles.map(a => a.title || String(a)).filter(Boolean) : null) ||
-      (Array.isArray(data?.data) ? data.data.map(a => a.title || String(a)).filter(Boolean) : null) ||
-      [];
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`GDELT HTTP ${res.status}`);
+    const j = await res.json();
 
-    newsList.innerHTML = "";
-
-    if (!headlines.length || (headlines.length === 1 && String(headlines[0]).toLowerCase().includes("no headlines"))) {
-      newsLine.textContent = "No headlines returned.";
-      newsLine.classList.add("muted");
+    const arts = (j.articles || []).slice(0, 5);
+    if (!arts.length) {
+      $("newsLine").textContent = "No headlines returned.";
+      $("newsMeta").textContent = "Source: GDELT";
       return;
     }
 
-    newsLine.textContent = `Top headlines`;
-    newsLine.classList.remove("muted");
-
-    headlines.slice(0, 6).forEach((h) => {
-      const div = document.createElement("div");
-      div.className = "newsItem";
-      div.textContent = h;
-      newsList.appendChild(div);
-    });
+    // Build a single-line ticker-ish display
+    const titles = arts.map(a => a.title).filter(Boolean);
+    $("newsLine").textContent = titles.join("  •  ");
+    $("newsMeta").textContent = "Source: GDELT 2.1 (public)";
   } catch (e) {
-    newsLine.textContent = "News error";
-    newsLine.classList.add("muted");
-    newsList.innerHTML = "";
+    $("newsLine").textContent = "News error";
+    $("newsMeta").textContent = String(e);
   }
 }
 
-function buildTimeLineFromTimes(timesObj) {
-  // prefer ordering
-  const order = [
-    "Local",
-    "ET", "CT", "MT", "PT",
-    "UTC",
-    "London", "Paris", "Dubai",
-    "Seoul", "Tokyo",
-    "Guam",
-    "Manila",
-  ];
-  const parts = [];
-  for (const k of order) {
-    if (timesObj[k]) parts.push(`${k} ${timesObj[k]}`);
-  }
-  // add anything else
-  for (const [k, v] of Object.entries(timesObj)) {
-    if (!order.includes(k)) parts.push(`${k} ${v}`);
-  }
-  return parts.join(" · ");
-}
-
-async function refreshTime() {
-  try {
-    const data = await tryFetchJson(["/time", "/worldtime", "/world_time", "/api/time", "/v1/time"]);
-
-    if (data && data.ok === false) throw new Error(data.error || "time error");
-
-    // tolerate: {line}, {times}, or {data:{times}}
-    const line = pickFirst(data, ["line"], null) || pickFirst(data?.data, ["line"], null);
-    if (line) {
-      timeTicker.textContent = line;
-      return;
-    }
-
-    const times =
-      pickFirst(data, ["times"], null) ||
-      pickFirst(data?.data, ["times"], null) ||
-      null;
-
-    if (times && typeof times === "object") {
-      timeTicker.textContent = buildTimeLineFromTimes(times);
-      return;
-    }
-
-    // fallback: if API returns array or something unexpected
-    timeTicker.textContent = JSON.stringify(data).slice(0, 200);
-  } catch (e) {
-    timeTicker.textContent = "Time error";
-  }
-}
-
-// Chat: POST /query with {message, session_id}
-async function sendChat() {
-  const msg = (chatInput.value || "").trim();
-  if (!msg) return;
-
-  chatInput.value = "";
-  logLine(`> ${msg}`);
-
-  try {
-    const r = await fetch(`${API_BASE}/query`, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ message: msg, session_id: sessionId })
-    });
-
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok || data.ok === false) {
-      throw new Error(data.error || `${r.status} ${JSON.stringify(data).slice(0, 140)}`);
-    }
-    logLine(data.text || "(no text)");
-  } catch (e) {
-    logLine(`send error: ${e}`);
-  }
-}
-
-sendBtn.addEventListener("click", sendChat);
-chatInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendChat();
-});
-
-
-// -----------------
+// =====================
 // Globe
-// -----------------
-function initGlobe() {
-  const globeEl = document.getElementById("globe");
+// =====================
+async function initGlobe() {
+  const mount = $("globeMount");
 
-  const globe = Globe()(globeEl)
+  const world = Globe()(mount)
     .globeImageUrl("https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg")
     .bumpImageUrl("https://unpkg.com/three-globe/example/img/earth-topology.png")
-    .backgroundColor("rgba(0,0,0,0)")
-    .pointAltitude(0.03)
-    .pointRadius(0.7);
+    .backgroundImageUrl("https://unpkg.com/three-globe/example/img/night-sky.png")
+    .atmosphereColor("#00a6b4")
+    .atmosphereAltitude(0.18);
 
-  globe.pointOfView({ lat: 20, lng: 0, altitude: 2.2 });
+  // try to pin to browser location
+  try {
+    const loc = await getBrowserLocation();
+    world
+      .pointsData([{ lat: loc.lat, lng: loc.lon, size: 0.6, color: "#35d07f" }])
+      .pointAltitude("size")
+      .pointColor("color");
 
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        globe.pointsData([{ lat, lng, size: 1 }]);
-        globe.pointOfView({ lat, lng, altitude: 1.7 }, 1200);
-      },
-      () => {},
-      { enableHighAccuracy: true, timeout: 6000 }
-    );
+    world.pointOfView({ lat: loc.lat, lng: loc.lon, altitude: 1.9 }, 1200);
+    $("globeMeta").textContent = "Pinned to your location (browser geolocation).";
+  } catch {
+    world.pointOfView({ lat: 15, lng: 120, altitude: 2.2 }, 1200);
+    $("globeMeta").textContent = "World view (no location permission).";
+  }
+
+  // Resize handling
+  function resize() {
+    const w = mount.clientWidth;
+    const h = mount.clientHeight;
+    world.width(w);
+    world.height(h);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+}
+
+// =====================
+// Command Center: Ping + Send
+// =====================
+async function doPing() {
+  try {
+    log("> Ping");
+    const { base, json } = await fetchFirstOk("/ping", { method: "GET" });
+    $("upstreamLabel").textContent = "ok";
+    log(`${base}/ping -> ${JSON.stringify(json)}`);
+  } catch (e) {
+    $("upstreamLabel").textContent = "error";
+    log(`send error: ${String(e)}`);
   }
 }
 
-initGlobe();
+async function doSend() {
+  const msg = ($("chatIn").value || "").trim();
+  if (!msg) return;
 
+  try {
+    log(`> ${msg}`);
 
-// Refresh loops
-refreshWeather();
-refreshNews();
-refreshTime();
+    const body = JSON.stringify({
+      message: msg,
+      session_id: "web"
+    });
 
-// Weather/news slower refresh
-setInterval(refreshWeather, 60_000);
-setInterval(refreshNews, 90_000);
+    const { base, json } = await fetchFirstOk("/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body
+    });
 
-// Time refresh often
-setInterval(refreshTime, 10_000);
+    if (json && json.text) {
+      log(json.text);
+    } else {
+      log(`${base}/query -> ${JSON.stringify(json)}`);
+    }
+  } catch (e) {
+    log(`send error: ${String(e)}`);
+  }
+}
+
+// =====================
+// Boot
+// =====================
+(function main() {
+  if (TICKER_SECONDS_OVERRIDE !== null) {
+    // override ticker animation duration at runtime
+    $("timeTicker").style.animationDuration = `${TICKER_SECONDS_OVERRIDE}s`;
+  }
+
+  updateTicker();
+  setInterval(updateTicker, 1000);
+
+  loadWeather();
+  // refresh weather/news periodically (resilient + light)
+  setInterval(loadWeather, 10 * 60 * 1000); // 10 min
+
+  loadNews();
+  setInterval(loadNews, 12 * 60 * 1000); // 12 min
+
+  initGlobe();
+
+  $("sendBtn").addEventListener("click", doSend);
+  $("chatIn").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doSend();
+  });
+
+  doPing();
+})();
