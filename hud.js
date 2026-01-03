@@ -1,7 +1,17 @@
-// hud.js
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
-
 const $ = (id) => document.getElementById(id);
+
+function getOrCreate(id, genFn) {
+  let v = localStorage.getItem(id);
+  if (!v) {
+    v = genFn();
+    localStorage.setItem(id, v);
+  }
+  return v;
+}
+
+const USER_ID = getOrCreate("arc_user_id", () => "u_" + Math.random().toString(36).slice(2, 10));
+const SESSION_ID = getOrCreate("arc_session_id", () => "s_" + Math.random().toString(36).slice(2, 10));
 
 function logSys(msg) {
   const el = $("sysLog");
@@ -40,14 +50,15 @@ async function sendPrompt() {
   if (btn) btn.disabled = true;
 
   try {
+    const payload = { prompt, user_id: USER_ID, session_id: SESSION_ID };
     const r = await fetchJSON(API_BASE + "/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, user_id: "web" }),
+      body: JSON.stringify(payload),
     });
 
     const upstream = r.headers.get("X-ARC-Upstream") || "—";
-    if ($("metaUpstream")) $("metaUpstream").textContent = upstream;
+    $("metaUpstream").textContent = upstream;
 
     if (!r.ok) {
       logSys(`Error ${r.status}: ${JSON.stringify(r.data)}`);
@@ -71,10 +82,8 @@ async function sendPrompt() {
   }
 }
 
-/* ---------- Panels / UI ---------- */
-function show(el) { if (el) el.classList.remove("hidden"); }
+function toggle(el) { if (el) el.classList.toggle("hidden"); }
 function hide(el) { if (el) el.classList.add("hidden"); }
-function toggle(el) { if (!el) return; el.classList.toggle("hidden"); }
 
 function setupPanels() {
   const panelSessions = $("panelSessions");
@@ -86,27 +95,20 @@ function setupPanels() {
   $("btnCloseTools")?.addEventListener("click", () => hide(panelTools));
 
   $("btnClearChat")?.addEventListener("click", () => {
-    const chat = $("chat");
-    if (chat) chat.innerHTML = "";
+    $("chat").innerHTML = "";
     logSys("chat cleared");
   });
 
-  // Blackout toggle
   $("btnBlackout")?.addEventListener("click", () => {
-    const b = $("blackout");
-    if (!b) return;
-    b.classList.toggle("hidden");
+    $("blackout")?.classList.toggle("hidden");
   });
 
-  // Click blackout to exit
   $("blackout")?.addEventListener("click", () => {
     $("blackout")?.classList.add("hidden");
   });
 }
 
-/* ---------- Tools: Weather / News / Time ---------- */
-let lastLatLon = null;
-
+/* -------- Location -------- */
 async function getBrowserLocation() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
@@ -118,13 +120,13 @@ async function getBrowserLocation() {
   });
 }
 
+/* -------- Weather -------- */
 async function refreshWeather() {
   const loc = await getBrowserLocation();
   if (!loc) {
     $("tickerWeather").textContent = "Location blocked. Enable location for local weather.";
     return;
   }
-  lastLatLon = loc;
 
   const url = `${API_BASE}/tools/weather?lat=${encodeURIComponent(loc.lat)}&lon=${encodeURIComponent(loc.lon)}`;
   const r = await fetchJSON(url, { method: "GET" });
@@ -144,9 +146,9 @@ async function refreshWeather() {
   if (d.wind_mph != null) parts.push(`Wind ${Math.round(d.wind_mph)} mph`);
 
   $("tickerWeather").textContent = parts.join(" · ") || "—";
-  logSys(`weather ok (${d.provider || "?"})`);
 }
 
+/* -------- News -------- */
 async function refreshNews() {
   const r = await fetchJSON(API_BASE + "/tools/news", { method: "GET" });
   if (!r.ok) {
@@ -157,16 +159,26 @@ async function refreshNews() {
 
   const headlines = r.data?.headlines || [];
   $("tickerNews").textContent = headlines.length ? headlines.join(" | ") : "—";
-  logSys(`news ok (${r.data?.provider || "?"})`);
 }
 
-function refreshWorldTime() {
-  // No API needed; uses Intl on-device. Add/remove zones anytime.
+/* -------- World Time ticker -------- */
+function buildWorldTimeLine() {
+  // Includes local + US zones + UTC + Philippines/Guam/Seoul/Tokyo + major cities
   const zones = [
-    { name: "NY", tz: "America/New_York" },
+    { name: "LOCAL", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    { name: "ET", tz: "America/New_York" },
+    { name: "CT", tz: "America/Chicago" },
+    { name: "MT", tz: "America/Denver" },
+    { name: "PT", tz: "America/Los_Angeles" },
     { name: "UTC", tz: "UTC" },
-    { name: "Manila", tz: "Asia/Manila" },
     { name: "London", tz: "Europe/London" },
+    { name: "Paris", tz: "Europe/Paris" },
+    { name: "Dubai", tz: "Asia/Dubai" },
+    { name: "Manila", tz: "Asia/Manila" },
+    { name: "Guam", tz: "Pacific/Guam" },
+    { name: "Seoul", tz: "Asia/Seoul" },
+    { name: "Tokyo", tz: "Asia/Tokyo" },
+    { name: "Sydney", tz: "Australia/Sydney" },
   ];
 
   const now = new Date();
@@ -181,10 +193,17 @@ function refreshWorldTime() {
     return `${z.name} ${fmt.format(now)}`;
   });
 
-  $("tickerTime").textContent = pieces.join(" · ");
+  return pieces.join("   •   ");
 }
 
-/* ---------- Map (Leaflet) ---------- */
+function refreshWorldTime() {
+  // Put the line into the scrolling ticker track
+  const track = document.querySelector("#tickerTimeTrack");
+  if (!track) return;
+  track.textContent = buildWorldTimeLine() + "   •   " + buildWorldTimeLine(); // duplicate for smoother loop
+}
+
+/* -------- Map -------- */
 let map = null;
 let marker = null;
 
@@ -199,34 +218,36 @@ function initMap() {
     attribution: "© OpenStreetMap",
   }).addTo(map);
 
-  // Try to pin user (if allowed). Otherwise keep world view.
   getBrowserLocation().then((loc) => {
     if (!loc) return;
-    if (!map) return;
-    map.setView([loc.lat, loc.lon], 10);
+    map.setView([loc.lat, loc.lon], 11);
     marker = L.marker([loc.lat, loc.lon]).addTo(map);
     $("mapCaption").textContent = "Pinned to your location (browser geolocation).";
   });
+
+  // Fix iOS / orientation render glitches
+  setTimeout(() => map.invalidateSize(true), 400);
+  window.addEventListener("orientationchange", () => setTimeout(() => map.invalidateSize(true), 400));
+  window.addEventListener("resize", () => setTimeout(() => map.invalidateSize(true), 250));
 }
 
-/* ---------- System buttons ---------- */
+/* -------- System Buttons -------- */
 async function ping() {
-  // pings the LLM path
   addBubble("user", "ping");
   const r = await fetchJSON(API_BASE + "/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: "ping", user_id: "web" }),
+    body: JSON.stringify({ prompt: "ping", user_id: USER_ID, session_id: SESSION_ID }),
   });
 
   const upstream = r.headers.get("X-ARC-Upstream") || "—";
-  if ($("metaUpstream")) $("metaUpstream").textContent = upstream;
+  $("metaUpstream").textContent = upstream;
 
   if (!r.ok) {
     addBubble("arc", `Ping failed ${r.status}: ${JSON.stringify(r.data)}`);
     return;
   }
-  addBubble("arc", r.data?.response || r.data?.final || JSON.stringify(r.data));
+  addBubble("arc", r.data?.response || JSON.stringify(r.data));
 }
 
 async function testAPI() {
@@ -235,14 +256,12 @@ async function testAPI() {
   logSys(JSON.stringify(r.data, null, 2));
 }
 
-/* ---------- Wire events ---------- */
 document.addEventListener("DOMContentLoaded", () => {
-  if ($("metaApi")) $("metaApi").textContent = API_BASE;
-
+  $("metaApi").textContent = API_BASE;
+  $("metaUpstream").textContent = "—";
   setupPanels();
   initMap();
 
-  // Send
   $("send")?.addEventListener("click", sendPrompt);
   $("prompt")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -251,21 +270,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // System
   $("btnPing")?.addEventListener("click", ping);
   $("btnTest")?.addEventListener("click", testAPI);
 
-  // Tools
   $("btnToolWeather")?.addEventListener("click", refreshWeather);
   $("btnToolNews")?.addEventListener("click", refreshNews);
   $("btnToolWorldTime")?.addEventListener("click", refreshWorldTime);
 
-  // Initial loads
-  refreshWorldTime();
   refreshNews();
   refreshWeather();
+  refreshWorldTime();
 
-  // Auto-refresh tickers
   setInterval(refreshWorldTime, 1000);
   setInterval(refreshNews, 5 * 60 * 1000);
   setInterval(refreshWeather, 10 * 60 * 1000);
