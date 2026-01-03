@@ -2,72 +2,74 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ARC OMEGA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>A.R.C. OMEGA</title>
   <link rel="stylesheet" href="./styles.css" />
-
-  <!-- Globe: globe.gl (Three.js wrapper) -->
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/globe.gl@2.33.1/dist/globe.gl.min.js"></script>
+  <!-- Globe.gl (Three.js) -->
+  <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/globe.gl@2.32.3/dist/globe.gl.min.js"></script>
 </head>
+
 <body>
   <div class="page">
     <header class="top">
       <div class="brand">
         <div class="logo">ARC</div>
         <div class="status">
-          <div>State: <span id="state">ONLINE</span></div>
-          <div>Council: <span id="council">RUNNING</span></div>
+          <div><span class="label">State:</span> <span class="pill ok">ONLINE</span></div>
+          <div><span class="label">Council:</span> <span class="pill ok">RUNNING</span></div>
         </div>
       </div>
     </header>
 
     <main class="grid">
       <section class="card">
-        <h3>War Chest</h3>
-        <div class="big">$0.00</div>
+        <h2>War Chest</h2>
+        <div class="bigmoney">$0.00</div>
         <div class="muted">Placeholder. Later: budgets, giving, mission support, etc.</div>
       </section>
 
       <section class="card">
-        <h3>Weather</h3>
-        <div id="weatherLine" class="line muted">Loading…</div>
+        <h2>Weather</h2>
+        <div id="weatherLine" class="line">Loading…</div>
+        <div id="weatherMeta" class="muted"></div>
       </section>
 
       <section class="card">
-        <h3>News</h3>
-        <div id="newsLine" class="line muted">Loading…</div>
-        <div id="newsList" class="newsList"></div>
+        <h2>News</h2>
+        <div id="newsLine" class="line">Loading…</div>
+        <div id="newsMeta" class="muted"></div>
       </section>
 
-      <section class="card tickerCard">
-        <h3>World Time</h3>
-        <div class="ticker">
-          <div class="tickerTrack" id="timeTicker">Loading…</div>
+      <section class="card">
+        <h2>World Time</h2>
+        <div class="tickerWrap">
+          <div id="timeTicker" class="ticker">Loading…</div>
+        </div>
+        <div class="muted">Local + US zones + UTC + Manila/Guam/Seoul/Tokyo</div>
+      </section>
+
+      <section class="card">
+        <h2>Command Center</h2>
+        <div class="chips">
+          <span class="chip">API: <span id="apiBaseLabel" class="mono">—</span></span>
+          <span class="chip">Upstream: <span id="upstreamLabel" class="mono">—</span></span>
+        </div>
+
+        <div class="console">
+          <pre id="consoleOut" class="mono"></pre>
+        </div>
+
+        <div class="chatRow">
+          <input id="chatIn" class="chatIn" placeholder="Type to ARC…" />
+          <button id="sendBtn" class="btn">Send</button>
         </div>
       </section>
 
-      <section class="card command">
-        <h3>Command Center</h3>
-        <div class="metaRow">
-          <div class="pill">API: <span id="apiBaseLabel"></span></div>
-          <div class="pill">Upstream: <span id="upstreamLabel">—</span></div>
-        </div>
-
-        <div class="console" id="console"></div>
-
-        <div class="inputRow">
-          <input id="chatInput" type="text" placeholder="Type to ARC…" />
-          <button id="sendBtn">Send</button>
-        </div>
-      </section>
-
-      <section class="card globeCard">
-        <h3>Globe</h3>
-        <div class="globeWrap">
-          <div id="globe"></div>
-          <div class="muted small">Pinned to your location (browser geolocation) when allowed.</div>
-        </div>
+      <section class="card">
+        <h2>Globe</h2>
+        <div id="globeMount" class="globe"></div>
+        <div id="globeMeta" class="muted"></div>
       </section>
     </main>
   </div>
