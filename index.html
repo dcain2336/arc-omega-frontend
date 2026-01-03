@@ -2,78 +2,72 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>A.R.C. OMEGA</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ARC-OMEGA</title>
   <link rel="stylesheet" href="./styles.css" />
-  <!-- Globe.gl (Three.js) -->
-  <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/globe.gl@2.32.3/dist/globe.gl.min.js"></script>
 </head>
-
 <body>
-  <div class="page">
+  <div class="wrap">
     <header class="top">
-      <div class="brand">
-        <div class="logo">ARC</div>
-        <div class="status">
-          <div><span class="label">State:</span> <span class="pill ok">ONLINE</span></div>
-          <div><span class="label">Council:</span> <span class="pill ok">RUNNING</span></div>
-        </div>
+      <div class="brand">ARC</div>
+      <div class="status">
+        <div>State: <b id="state">ONLINE</b></div>
+        <div>Council: <b id="council">RUNNING</b></div>
       </div>
     </header>
 
-    <main class="grid">
-      <section class="card">
-        <h2>War Chest</h2>
-        <div class="bigmoney">$0.00</div>
-        <div class="muted">Placeholder. Later: budgets, giving, mission support, etc.</div>
-      </section>
+    <section class="card">
+      <h2>War Chest</h2>
+      <div class="big">$0.00</div>
+      <div class="muted">Placeholder. Later: budgets, giving, mission support, etc.</div>
+    </section>
 
-      <section class="card">
-        <h2>Weather</h2>
-        <div id="weatherLine" class="line">Loading…</div>
-        <div id="weatherMeta" class="muted"></div>
-      </section>
+    <section class="card">
+      <h2>Weather</h2>
+      <div id="weatherText" class="muted">Loading…</div>
+      <div class="muted">Source: Open-Meteo (browser geolocation)</div>
+    </section>
 
-      <section class="card">
-        <h2>News</h2>
-        <div id="newsLine" class="line">Loading…</div>
-        <div id="newsMeta" class="muted"></div>
-      </section>
+    <section class="card">
+      <h2>News</h2>
+      <div id="newsText" class="muted">Loading…</div>
+      <div class="muted">Source: GDELT 2.1 (public)</div>
+    </section>
 
-      <section class="card">
-        <h2>World Time</h2>
-        <div class="tickerWrap">
-          <div id="timeTicker" class="ticker">Loading…</div>
-        </div>
-        <div class="muted">Local + US zones + UTC + Manila/Guam/Seoul/Tokyo</div>
-      </section>
+    <section class="card">
+      <h2>World Time</h2>
+      <div class="tickerOuter">
+        <div id="timeTicker" class="tickerInner">Loading…</div>
+      </div>
+      <div class="muted">Local + US zones + UTC + Manila/Guam/Seoul/Tokyo</div>
+    </section>
 
-      <section class="card">
-        <h2>Command Center</h2>
-        <div class="chips">
-          <span class="chip">API: <span id="apiBaseLabel" class="mono">—</span></span>
-          <span class="chip">Upstream: <span id="upstreamLabel" class="mono">—</span></span>
-        </div>
+    <section class="card">
+      <h2>Command Center</h2>
+      <div class="row">
+        <span class="pill">API: <span id="apiUrlText"></span></span>
+        <span class="pill">Upstream: <span id="upstream">—</span></span>
+      </div>
+      <pre id="log" class="log"></pre>
+      <div class="row">
+        <input id="msg" class="input" placeholder="Type to ARC…" />
+        <button id="send" class="btn">Send</button>
+      </div>
+    </section>
 
-        <div class="console">
-          <pre id="consoleOut" class="mono"></pre>
-        </div>
-
-        <div class="chatRow">
-          <input id="chatIn" class="chatIn" placeholder="Type to ARC…" />
-          <button id="sendBtn" class="btn">Send</button>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>Globe</h2>
-        <div id="globeMount" class="globe"></div>
-        <div id="globeMeta" class="muted"></div>
-      </section>
-    </main>
+    <section class="card">
+      <h2>Globe</h2>
+      <!-- keep your existing globe element / canvas id if you already have one -->
+      <div id="globeMount" class="globeMount"></div>
+    </section>
   </div>
 
+  <script>
+    // Set this to your backend
+    window.ARC_CONFIG = {
+      BACKEND_URL: "https://arc-omega-backend.onrender.com"
+    };
+  </script>
   <script src="./app.js"></script>
 </body>
 </html>
