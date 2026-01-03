@@ -1,254 +1,240 @@
 // app.js
 
-const API_BASE =
-  (localStorage.getItem("ARC_API_BASE") || "").trim() ||
-  "https://arc-omega-api.dcain1.workers.dev"; // <-- your CF worker API
+// ✅ Set this to your API base.
+// If you want to swap between Render/Workers automatically later, we can do that.
+const API_BASE = (localStorage.getItem("ARC_API_BASE") || "https://arc-omega-api.dcain1.workers.dev").replace(/\/+$/, "");
 
-const $ = (id) => document.getElementById(id);
+document.getElementById("apiBaseLabel").textContent = API_BASE;
 
-const apiBaseEl = $("apiBase");
-const upstreamTxt = $("upstreamTxt");
-const systemOut = $("systemOut");
-const chatIn = $("chatIn");
-const sendBtn = $("sendBtn");
-const weatherLine = $("weatherLine");
-const newsLine = $("newsLine");
-const timeTicker = $("timeTicker");
-const globeHint = $("globeHint");
+const weatherLine = document.getElementById("weatherLine");
+const newsLine = document.getElementById("newsLine");
+const timeTicker = document.getElementById("timeTicker");
 
-apiBaseEl.textContent = API_BASE;
+const chatLog = document.getElementById("chatLog");
+const chatInput = document.getElementById("chatInput");
+const sendBtn = document.getElementById("sendBtn");
+const sysLine = document.getElementById("sysLine");
 
-// Stable IDs
-function getOrMake(key, makeFn) {
-  let v = localStorage.getItem(key);
-  if (!v) {
-    v = makeFn();
-    localStorage.setItem(key, v);
-  }
-  return v;
+const globeHint = document.getElementById("globeHint");
+const recenterBtn = document.getElementById("recenterBtn");
+
+function el(tag, cls, text){
+  const d = document.createElement(tag);
+  if (cls) d.className = cls;
+  if (text != null) d.textContent = text;
+  return d;
 }
-const user_id = getOrMake("arc_user_id", () => "u_" + Math.random().toString(36).slice(2, 10));
-const session_id = getOrMake("arc_session_id", () => "s_" + Math.random().toString(36).slice(2, 10));
 
-// ----------------- Helpers -----------------
-async function fetchJSON(url, opts) {
-  const r = await fetch(url, opts);
+function addMsg(role, text){
+  const div = el("div", `msg ${role}`, text);
+  chatLog.appendChild(div);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+async function fetchJson(path){
+  const url = `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+  const r = await fetch(url, { method: "GET" });
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return await r.json();
+}
+
+async function postJson(path, body){
+  const url = `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify(body),
+  });
   const text = await r.text();
-  let j = null;
-  try { j = JSON.parse(text); } catch (e) {}
-  if (!r.ok) {
-    const msg = j ? JSON.stringify(j) : text;
-    throw new Error(`HTTP ${r.status}: ${msg}`);
-  }
-  return j ?? {};
+  if (!r.ok) throw new Error(`${r.status} ${text}`);
+  try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
-function logSystem(msg) {
-  const ts = new Date().toLocaleTimeString();
-  systemOut.textContent = `[${ts}] ${msg}\n` + systemOut.textContent;
-}
+// -------------------------
+// Widgets: Weather / News / Time
+// -------------------------
 
-// ----------------- Weather / News / Time -----------------
-async function refreshWeather() {
-  try {
-    const j = await fetchJSON(`${API_BASE}/weather`);
-    // expected: { ok:true, line:"City · 52°F · clear sky · RH 83% · Wind 6 mph" }
-    weatherLine.textContent = j.line || "Weather unavailable.";
-  } catch (e) {
-    weatherLine.textContent = "Weather error.";
-  }
-}
-
-async function refreshNews() {
-  try {
-    const j = await fetchJSON(`${API_BASE}/news`);
-    // expected: { ok:true, headlines:[...], provider:"..." }
-    const heads = Array.isArray(j.headlines) ? j.headlines : [];
-    if (!heads.length) {
-      newsLine.textContent = "No headlines returned.";
-    } else {
-      newsLine.textContent = heads[0];
+async function refreshWeather(){
+  try{
+    // If your API exposes /weather already, great.
+    // If not, adapt this path to your existing endpoint.
+    const data = await fetchJson("/weather");
+    // Expecting something like: { ok:true, name, temp_f, desc, rh, wind_mph }
+    if (data && data.ok){
+      weatherLine.textContent = `${data.name} · ${data.temp_f}°F · ${data.desc} · RH ${data.rh}% · Wind ${data.wind_mph} mph`;
+    }else{
+      weatherLine.textContent = data?.error || "Weather unavailable";
     }
-  } catch (e) {
-    newsLine.textContent = "News error.";
+  }catch(e){
+    weatherLine.textContent = `Weather error (${e.message})`;
   }
 }
 
-function buildTimeTicker() {
-  // Required cities/zones:
-  const zones = [
-    { label: "Local", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
-    { label: "ET", tz: "America/New_York" },
-    { label: "CT", tz: "America/Chicago" },
-    { label: "MT", tz: "America/Denver" },
-    { label: "PT", tz: "America/Los_Angeles" },
-    { label: "UTC", tz: "UTC" },
-    { label: "London", tz: "Europe/London" },
-    { label: "Paris", tz: "Europe/Paris" },
-    { label: "Dubai", tz: "Asia/Dubai" },
-    { label: "Seoul", tz: "Asia/Seoul" },
-    { label: "Tokyo", tz: "Asia/Tokyo" },
-    { label: "Guam", tz: "Pacific/Guam" },
-    { label: "Manila", tz: "Asia/Manila" },
-  ];
-
-  const fmt = (tz) =>
-    new Intl.DateTimeFormat([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-      timeZone: tz,
-    }).format(new Date());
-
-  function render() {
-    const parts = zones.map((z) => `${z.label} ${fmt(z.tz)}`);
-    // repeat twice so ticker is continuous
-    timeTicker.textContent = parts.join("  •  ") + "  •  " + parts.join("  •  ");
+async function refreshNews(){
+  try{
+    const data = await fetchJson("/news");
+    // Expect: { ok:true, headlines:[...] }
+    if (data && data.ok && Array.isArray(data.headlines)){
+      const headlines = data.headlines.filter(Boolean);
+      newsLine.textContent = headlines.length ? headlines.slice(0, 3).join(" · ") : "No headlines returned.";
+    }else{
+      newsLine.textContent = data?.error || "No headlines returned.";
+    }
+  }catch(e){
+    newsLine.textContent = `News error (${e.message})`;
   }
-
-  render();
-  setInterval(render, 1000);
 }
 
-// ----------------- Chat -----------------
-async function sendMessage() {
-  const text = (chatIn.value || "").trim();
+async function refreshTime(){
+  try{
+    const data = await fetchJson("/time");
+    // Expect: { ok:true, items:[{label,time}] } OR anything similar
+    if (data && data.ok && Array.isArray(data.items)){
+      const text = data.items.map(x => `${x.label} ${x.time}`).join(" · ");
+      timeTicker.textContent = text;
+      // duplicate to reduce blank gaps in ticker
+      timeTicker.textContent = `${text} · ${text}`;
+    }else if (data && data.ok && typeof data.text === "string"){
+      timeTicker.textContent = `${data.text} · ${data.text}`;
+    }else{
+      timeTicker.textContent = "Time unavailable";
+    }
+  }catch(e){
+    timeTicker.textContent = `Time error (${e.message})`;
+  }
+}
+
+// -------------------------
+// Chat
+// -------------------------
+
+async function sendChat(){
+  const text = (chatInput.value || "").trim();
   if (!text) return;
 
-  chatIn.value = "";
-  logSystem(`Sending: ${text}`);
+  sysLine.textContent = "";
+  addMsg("user", text);
+  chatInput.value = "";
 
-  try {
-    // ✅ FIX: backend expects "message" (not "prompt")
+  try{
+    // ✅ Your api.py expects "message", NOT "prompt"
     const payload = {
       message: text,
-      user_id,
-      session_id,
+      session_id: localStorage.getItem("ARC_SESSION") || "default",
     };
 
-    const j = await fetchJSON(`${API_BASE}/query`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const data = await postJson("/query", payload);
 
-    if (j.upstream) upstreamTxt.textContent = j.upstream;
-    if (j.provider || j.model) {
-      upstreamTxt.textContent = `${j.provider || "?"}/${j.model || "?"}`;
+    if (data && data.ok && data.text){
+      addMsg("bot", data.text);
+      sysLine.textContent = `Provider: ${data.provider || "-"} · Model: ${data.model || "-"}`;
+    }else{
+      addMsg("bot", data?.error || "No response.");
+      sysLine.textContent = "Send failed (unknown)";
     }
-
-    const answer = j.answer || j.response || j.text || "(no answer)";
-    logSystem(`ARC: ${answer}`);
-  } catch (e) {
-    logSystem(`Send failed: ${String(e.message || e)}`);
+  }catch(e){
+    addMsg("bot", `Send failed: ${e.message}`);
+    sysLine.textContent = `send error: ${e.message}`;
   }
 }
 
-sendBtn.addEventListener("click", sendMessage);
-chatIn.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter") sendMessage();
+sendBtn.addEventListener("click", sendChat);
+chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendChat();
 });
 
-// ----------------- Globe -----------------
-let globe = null;
-let globeData = {
-  points: [],
-  arcs: [],
-};
+// -------------------------
+// Globe
+// -------------------------
 
-function initGlobe() {
-  const el = $("globe");
-  const w = el.clientWidth || 600;
-  const h = el.clientHeight || 360;
+let globe;
+let lastLatLng = null;
 
-  globe = Globe()(el)
-    .width(w)
-    .height(h)
+function initGlobe(){
+  const container = document.getElementById("globe");
+
+  // If Globe is blocked, show fallback message
+  if (typeof Globe === "undefined"){
+    globeHint.textContent = "Globe failed to load (CDN blocked).";
+    return;
+  }
+
+  globe = Globe()(container)
     .backgroundColor("rgba(0,0,0,0)")
-    .showAtmosphere(true)
-    .atmosphereAltitude(0.16)
-    .globeImageUrl("https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg")
+    .globeImageUrl("https://unpkg.com/three-globe/example/img/earth-night.jpg")
     .bumpImageUrl("https://unpkg.com/three-globe/example/img/earth-topology.png")
-    .pointsData(globeData.points)
-    .pointLat("lat")
-    .pointLng("lng")
+    .pointOfView({ lat: 20, lng: 0, altitude: 2.2 })
+    .pointsData([])
     .pointAltitude(0.02)
-    .pointRadius(0.6)
-    .pointColor(() => "rgba(0,220,255,0.9)")
-    .arcsData(globeData.arcs)
-    .arcStartLat("startLat")
-    .arcStartLng("startLng")
-    .arcEndLat("endLat")
-    .arcEndLng("endLng")
-    .arcAltitude("alt")
-    .arcStroke(0.7)
-    .arcColor(() => ["rgba(0,220,255,0.35)", "rgba(0,220,255,0.05)"])
-    .arcDashLength(0.4)
-    .arcDashGap(2)
-    .arcDashAnimateTime(2400);
+    .pointRadius(0.4)
+    .pointColor(() => "rgba(33,212,255,0.85)");
 
-  // default: world view
-  globe.pointOfView({ lat: 10, lng: 0, altitude: 2.1 }, 0);
+  globeHint.textContent = "Requesting location…";
 
-  // light + performance
-  globe.controls().enableDamping = true;
-  globe.controls().dampingFactor = 0.08;
-  globe.controls().autoRotate = true;
-  globe.controls().autoRotateSpeed = 0.35;
-
-  globeHint.textContent = "Globe ready. Requesting location…";
-
-  // Reflow on resize/orientation
-  window.addEventListener("resize", () => {
-    if (!globe) return;
-    globe.width(el.clientWidth);
-    globe.height(el.clientHeight);
+  // Resize handling
+  const ro = new ResizeObserver(() => {
+    try { globe.width(container.clientWidth); globe.height(container.clientHeight); } catch {}
   });
+  ro.observe(container);
+
+  requestLocation();
 }
 
-function setPinnedLocation(lat, lng) {
-  globeData.points = [{ lat, lng, name: "You" }];
-  globeData.arcs = [
-    { startLat: lat, startLng: lng, endLat: 10, endLng: 0, alt: 0.25 },
-  ];
-  globe.pointsData(globeData.points);
-  globe.arcsData(globeData.arcs);
+function setMarker(lat, lng){
+  lastLatLng = { lat, lng };
 
-  globe.pointOfView({ lat, lng, altitude: 1.25 }, 900);
-  globeHint.textContent = `Pinned: ${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+  if (!globe) return;
+  globe.pointsData([{ lat, lng }]);
+
+  globe.pointOfView(
+    { lat, lng, altitude: 1.35 },
+    900
+  );
+
+  globeHint.textContent = `Pinned near: ${lat.toFixed(3)}, ${lng.toFixed(3)}`;
 }
 
-function requestGeo() {
-  if (!navigator.geolocation) {
-    globeHint.textContent = "Geolocation unavailable. Showing world view.";
+function requestLocation(){
+  if (!navigator.geolocation){
+    globeHint.textContent = "Geolocation unavailable — showing world view.";
     return;
   }
 
   navigator.geolocation.getCurrentPosition(
     (pos) => {
-      const { latitude, longitude } = pos.coords;
-      setPinnedLocation(latitude, longitude);
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      setMarker(lat, lng);
     },
     () => {
-      globeHint.textContent = "Location denied. Showing world view.";
+      globeHint.textContent = "Location denied — showing world view.";
     },
-    { enableHighAccuracy: false, timeout: 7000, maximumAge: 60000 }
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 }
   );
 }
 
-// ----------------- Boot -----------------
-(async function boot() {
-  buildTimeTicker();
+recenterBtn.addEventListener("click", () => {
+  if (lastLatLng) setMarker(lastLatLng.lat, lastLatLng.lng);
+  else requestLocation();
+});
+
+// -------------------------
+// Boot + refresh loop
+// -------------------------
+
+async function boot(){
+  addMsg("bot", "ARC online. Send a message when ready.");
   initGlobe();
-  requestGeo();
 
-  await refreshWeather();
-  await refreshNews();
+  // First load
+  refreshWeather();
+  refreshNews();
+  refreshTime();
 
-  // refresh periodically
+  // Update cadence
   setInterval(refreshWeather, 60 * 1000);
   setInterval(refreshNews, 90 * 1000);
+  setInterval(refreshTime, 10 * 1000);
+}
 
-  logSystem(`HUD ready. user_id=${user_id} session_id=${session_id}`);
-})();
+boot();
