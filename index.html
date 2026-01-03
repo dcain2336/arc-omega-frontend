@@ -2,83 +2,91 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>ARC OMEGA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>A.R.C. OMEGA</title>
   <link rel="stylesheet" href="./styles.css" />
+
+  <!-- Globe.gl (Three.js under the hood) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/globe.gl@2.34.0/dist/globe.gl.min.js"></script>
 </head>
 
 <body>
   <div class="wrap">
 
-    <header class="hero">
-      <div class="hero-left">
-        <div class="logo">
-          <div class="logo-ring"></div>
-          <div class="logo-mark">ARC</div>
-        </div>
-      </div>
-      <div class="hero-right">
-        <div class="status">
-          <div><span class="label">State:</span> <span id="stateTxt" class="value ok">ONLINE</span></div>
-          <div><span class="label">Council:</span> <span id="councilTxt" class="value warn">RUNNING</span></div>
+    <header class="top">
+      <div class="brand">
+        <div class="logoGlow"></div>
+        <div class="title">
+          <div class="name">A.R.C. OMEGA</div>
+          <div class="sub">State: <b id="stateText">ONLINE</b> · Council: <b id="councilText">RUNNING</b></div>
         </div>
       </div>
     </header>
 
-    <section class="card">
-      <div class="card-title">War Chest</div>
-      <div class="big">$0.00</div>
-      <div class="muted">Placeholder. Later: budgets, giving, mission support, etc.</div>
-    </section>
+    <section class="grid">
 
-    <section class="card">
-      <div class="grid2">
-        <div>
-          <div class="subhead">Weather</div>
-          <div id="weatherLine" class="mono">Loading...</div>
+      <div class="card">
+        <div class="cardTitle">War Chest</div>
+        <div class="bigMoney">$0.00</div>
+        <div class="muted">Placeholder. Later: budgets, giving, mission support, etc.</div>
+      </div>
+
+      <div class="card">
+        <div class="cardTitle">Weather</div>
+        <div id="weatherLine" class="line">Loading...</div>
+      </div>
+
+      <div class="card">
+        <div class="cardTitle">News</div>
+        <div id="newsLine" class="line">Loading...</div>
+      </div>
+
+      <div class="card">
+        <div class="cardTitle">World Time</div>
+        <div class="ticker">
+          <div id="timeTicker" class="tickerTrack">
+            <span class="muted">Loading...</span>
+          </div>
         </div>
-        <div>
-          <div class="subhead">News</div>
-          <div id="newsLine" class="mono">Loading...</div>
+      </div>
+
+      <div class="card tall">
+        <div class="cardTitleRow">
+          <div class="cardTitle">Command Center</div>
+          <div class="pill">
+            API: <span id="apiBaseLabel"></span>
+          </div>
         </div>
+
+        <div id="chatLog" class="chatLog"></div>
+
+        <div class="chatBar">
+          <input id="chatInput" class="chatInput" placeholder="Type to ARC..." autocomplete="off" />
+          <button id="sendBtn" class="sendBtn">Send</button>
+        </div>
+
+        <div id="sysLine" class="sysLine"></div>
       </div>
 
-      <div class="subhead mt">World Time</div>
-      <div class="ticker">
-        <div id="timeTicker" class="ticker-track mono"></div>
+      <div class="card tall">
+        <div class="cardTitleRow">
+          <div class="cardTitle">Globe</div>
+          <div class="pill">
+            <button id="recenterBtn" class="miniBtn">Recenter</button>
+          </div>
+        </div>
+
+        <div id="globeWrap" class="globeWrap">
+          <div id="globe" class="globe"></div>
+          <div id="globeHint" class="hint">Requesting location…</div>
+        </div>
+
+        <div class="muted tiny">If WebGL is blocked, you’ll see a fallback “world view”.</div>
       </div>
+
     </section>
-
-    <section class="card">
-      <div class="card-title">Command Center</div>
-
-      <div class="pillrow">
-        <div class="pill">API: <span id="apiBase"></span></div>
-        <div class="pill">Upstream: <span id="upstreamTxt">—</span></div>
-      </div>
-
-      <div id="systemOut" class="systembox mono"></div>
-
-      <div class="chatrow">
-        <input id="chatIn" class="chatin" placeholder="Type to ARC..." autocomplete="off" />
-        <button id="sendBtn" class="sendbtn">Send</button>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-title">Globe</div>
-      <div class="muted small">Pinned to your location (browser geolocation). Falls back to world view if denied.</div>
-      <div id="globeWrap" class="globe-wrap">
-        <div id="globe" class="globe"></div>
-        <div id="globeHint" class="globe-hint mono">Loading globe…</div>
-      </div>
-    </section>
-
   </div>
-
-  <!-- Globe libs (CDN) -->
-  <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/globe.gl@2.33.0/dist/globe.gl.min.js"></script>
 
   <script src="./app.js"></script>
 </body>
