@@ -2,90 +2,74 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>A.R.C. OMEGA</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ARC OMEGA</title>
   <link rel="stylesheet" href="./styles.css" />
 
-  <!-- Globe.gl (Three.js under the hood) -->
+  <!-- Globe: globe.gl (Three.js wrapper) -->
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/globe.gl@2.34.0/dist/globe.gl.min.js"></script>
+  <script src="https://unpkg.com/globe.gl@2.33.1/dist/globe.gl.min.js"></script>
 </head>
-
 <body>
-  <div class="wrap">
-
+  <div class="page">
     <header class="top">
       <div class="brand">
-        <div class="logoGlow"></div>
-        <div class="title">
-          <div class="name">A.R.C. OMEGA</div>
-          <div class="sub">State: <b id="stateText">ONLINE</b> · Council: <b id="councilText">RUNNING</b></div>
+        <div class="logo">ARC</div>
+        <div class="status">
+          <div>State: <span id="state">ONLINE</span></div>
+          <div>Council: <span id="council">RUNNING</span></div>
         </div>
       </div>
     </header>
 
-    <section class="grid">
-
-      <div class="card">
-        <div class="cardTitle">War Chest</div>
-        <div class="bigMoney">$0.00</div>
+    <main class="grid">
+      <section class="card">
+        <h3>War Chest</h3>
+        <div class="big">$0.00</div>
         <div class="muted">Placeholder. Later: budgets, giving, mission support, etc.</div>
-      </div>
+      </section>
 
-      <div class="card">
-        <div class="cardTitle">Weather</div>
-        <div id="weatherLine" class="line">Loading...</div>
-      </div>
+      <section class="card">
+        <h3>Weather</h3>
+        <div id="weatherLine" class="line muted">Loading…</div>
+      </section>
 
-      <div class="card">
-        <div class="cardTitle">News</div>
-        <div id="newsLine" class="line">Loading...</div>
-      </div>
+      <section class="card">
+        <h3>News</h3>
+        <div id="newsLine" class="line muted">Loading…</div>
+        <div id="newsList" class="newsList"></div>
+      </section>
 
-      <div class="card">
-        <div class="cardTitle">World Time</div>
+      <section class="card tickerCard">
+        <h3>World Time</h3>
         <div class="ticker">
-          <div id="timeTicker" class="tickerTrack">
-            <span class="muted">Loading...</span>
-          </div>
+          <div class="tickerTrack" id="timeTicker">Loading…</div>
         </div>
-      </div>
+      </section>
 
-      <div class="card tall">
-        <div class="cardTitleRow">
-          <div class="cardTitle">Command Center</div>
-          <div class="pill">
-            API: <span id="apiBaseLabel"></span>
-          </div>
+      <section class="card command">
+        <h3>Command Center</h3>
+        <div class="metaRow">
+          <div class="pill">API: <span id="apiBaseLabel"></span></div>
+          <div class="pill">Upstream: <span id="upstreamLabel">—</span></div>
         </div>
 
-        <div id="chatLog" class="chatLog"></div>
+        <div class="console" id="console"></div>
 
-        <div class="chatBar">
-          <input id="chatInput" class="chatInput" placeholder="Type to ARC..." autocomplete="off" />
-          <button id="sendBtn" class="sendBtn">Send</button>
+        <div class="inputRow">
+          <input id="chatInput" type="text" placeholder="Type to ARC…" />
+          <button id="sendBtn">Send</button>
         </div>
+      </section>
 
-        <div id="sysLine" class="sysLine"></div>
-      </div>
-
-      <div class="card tall">
-        <div class="cardTitleRow">
-          <div class="cardTitle">Globe</div>
-          <div class="pill">
-            <button id="recenterBtn" class="miniBtn">Recenter</button>
-          </div>
+      <section class="card globeCard">
+        <h3>Globe</h3>
+        <div class="globeWrap">
+          <div id="globe"></div>
+          <div class="muted small">Pinned to your location (browser geolocation) when allowed.</div>
         </div>
-
-        <div id="globeWrap" class="globeWrap">
-          <div id="globe" class="globe"></div>
-          <div id="globeHint" class="hint">Requesting location…</div>
-        </div>
-
-        <div class="muted tiny">If WebGL is blocked, you’ll see a fallback “world view”.</div>
-      </div>
-
-    </section>
+      </section>
+    </main>
   </div>
 
   <script src="./app.js"></script>
