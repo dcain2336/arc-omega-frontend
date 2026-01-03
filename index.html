@@ -4,161 +4,82 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>ARC OMEGA</title>
-
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-        crossorigin="" />
-
-  <link rel="stylesheet" href="./hud.css" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
+
 <body>
-  <div id="blackout" class="blackout hidden" aria-hidden="true"></div>
+  <div class="wrap">
 
-  <header class="topbar">
-    <div class="topbar-left">
-      <button class="iconbtn" id="btnSessions" title="Sessions / Files">☰</button>
-      <div class="brand">
-        <div class="brand-dot"></div>
-        <div class="brand-text">ARC OMEGA</div>
+    <header class="hero">
+      <div class="hero-left">
+        <div class="logo">
+          <div class="logo-ring"></div>
+          <div class="logo-mark">ARC</div>
+        </div>
       </div>
-    </div>
-
-    <div class="topbar-center">
-      <div class="statuspill" id="statusPill">
-        <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">ONLINE</span>
+      <div class="hero-right">
+        <div class="status">
+          <div><span class="label">State:</span> <span id="stateTxt" class="value ok">ONLINE</span></div>
+          <div><span class="label">Council:</span> <span id="councilTxt" class="value warn">RUNNING</span></div>
+        </div>
       </div>
-    </div>
+    </header>
 
-    <div class="topbar-right">
-      <button class="iconbtn" id="btnBlackout" title="Blackout">⬛</button>
-      <button class="iconbtn" id="btnTools" title="Tools">⚙️</button>
-    </div>
-  </header>
+    <section class="card">
+      <div class="card-title">War Chest</div>
+      <div class="big">$0.00</div>
+      <div class="muted">Placeholder. Later: budgets, giving, mission support, etc.</div>
+    </section>
 
-  <aside class="panel panel-left hidden" id="panelSessions" aria-hidden="true">
-    <div class="panel-head">
-      <div class="panel-title">Sessions / Files</div>
-      <button class="iconbtn" id="btnCloseSessions" title="Close">✕</button>
-    </div>
-    <div class="panel-body">
-      <div class="panel-label">Sessions</div>
-      <div class="muted">Coming soon.</div>
-    </div>
-  </aside>
-
-  <aside class="panel panel-right hidden" id="panelTools" aria-hidden="true">
-    <div class="panel-head">
-      <div class="panel-title">Tools</div>
-      <button class="iconbtn" id="btnCloseTools" title="Close">✕</button>
-    </div>
-    <div class="panel-body">
-      <div class="panel-label">Quick Tools</div>
-      <button class="btn" id="btnToolWeather">Refresh Weather</button>
-      <button class="btn" id="btnToolNews">Refresh News</button>
-      <button class="btn" id="btnToolWorldTime">Refresh World Time</button>
-      <div class="divider"></div>
-      <div class="panel-label">System</div>
-      <button class="btn ghost" id="btnClearChat">Clear current chat view</button>
-    </div>
-  </aside>
-
-  <main class="shell">
-    <section class="col col-left">
-      <div class="card arc-card">
-        <div class="card-title">ARC</div>
-        <div class="arc-wrap">
-          <div class="arc-orb" id="arcOrb" aria-hidden="true">
-            <svg class="arc-svg" viewBox="0 0 200 200" role="img" aria-label="ARC Reactor">
-              <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(15,20,28,.95)" stroke-width="14"/>
-              <path d="M 56 72 L 144 72 L 100 152 Z" fill="none" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linejoin="round"/>
-              <path d="M 78 92 L 122 92 L 100 132 Z" fill="none" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linejoin="round"/>
-              <line x1="56" y1="72" x2="36" y2="58" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-              <line x1="144" y1="72" x2="164" y2="58" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-              <line x1="100" y1="152" x2="100" y2="178" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-              <line x1="70" y1="98" x2="48" y2="108" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-              <line x1="78" y1="118" x2="56" y2="132" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-              <line x1="130" y1="98" x2="152" y2="108" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-              <line x1="122" y1="118" x2="144" y2="132" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-              <line x1="78" y1="72" x2="70" y2="44" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-              <line x1="122" y1="72" x2="130" y2="44" stroke="rgba(15,20,28,.95)" stroke-width="10" stroke-linecap="round"/>
-              <line x1="78" y1="92" x2="56" y2="72" stroke="rgba(15,20,28,.95)" stroke-width="8" stroke-linecap="round"/>
-              <line x1="122" y1="92" x2="144" y2="72" stroke="rgba(15,20,28,.95)" stroke-width="8" stroke-linecap="round"/>
-              <line x1="100" y1="132" x2="100" y2="152" stroke="rgba(15,20,28,.95)" stroke-width="8" stroke-linecap="round"/>
-            </svg>
-          </div>
-
-          <div class="arc-status">
-            <div class="arc-line"><span class="muted">State:</span> <b>ONLINE</b></div>
-            <div class="arc-line"><span class="muted">Council:</span> <b>RUNNING</b></div>
-          </div>
+    <section class="card">
+      <div class="grid2">
+        <div>
+          <div class="subhead">Weather</div>
+          <div id="weatherLine" class="mono">Loading...</div>
+        </div>
+        <div>
+          <div class="subhead">News</div>
+          <div id="newsLine" class="mono">Loading...</div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-title">War Chest</div>
-        <div class="war">
-          <div class="war-amt">$0.00</div>
-          <div class="muted">Placeholder. Later: budgets, giving, mission support, etc.</div>
-        </div>
-      </div>
-
-      <div class="card tickers">
-        <div class="ticker">
-          <div class="ticker-title">Weather</div>
-          <div class="ticker-body" id="tickerWeather">—</div>
-        </div>
-        <div class="ticker">
-          <div class="ticker-title">News</div>
-          <div class="ticker-body" id="tickerNews">—</div>
-        </div>
-        <div class="ticker">
-          <div class="ticker-title">World Time</div>
-          <div class="ticker-scroll">
-            <div class="track" id="tickerTimeTrack">—</div>
-          </div>
-        </div>
+      <div class="subhead mt">World Time</div>
+      <div class="ticker">
+        <div id="timeTicker" class="ticker-track mono"></div>
       </div>
     </section>
 
-    <section class="col col-center">
-      <div class="card chat-card">
-        <div class="card-title">Command Center</div>
-        <div class="meta-lines">
-          <div class="meta-pill">API: <span id="metaApi">—</span></div>
-          <div class="meta-pill">Upstream: <span id="metaUpstream">—</span></div>
-        </div>
-        <div class="chat" id="chat"></div>
+    <section class="card">
+      <div class="card-title">Command Center</div>
+
+      <div class="pillrow">
+        <div class="pill">API: <span id="apiBase"></span></div>
+        <div class="pill">Upstream: <span id="upstreamTxt">—</span></div>
+      </div>
+
+      <div id="systemOut" class="systembox mono"></div>
+
+      <div class="chatrow">
+        <input id="chatIn" class="chatin" placeholder="Type to ARC..." autocomplete="off" />
+        <button id="sendBtn" class="sendbtn">Send</button>
       </div>
     </section>
 
-    <section class="col col-right">
-      <div class="card globe-card">
-        <div class="card-title">Map</div>
-        <div id="map" class="map"></div>
-        <div class="muted globe-caption" id="mapCaption">World view fallback. If you allow location, it pins you.</div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">System</div>
-        <div class="sys-row">
-          <button class="btn ghost" id="btnPing">Ping</button>
-          <button class="btn ghost" id="btnTest">Test API</button>
-        </div>
-        <div class="sys-log" id="sysLog"></div>
+    <section class="card">
+      <div class="card-title">Globe</div>
+      <div class="muted small">Pinned to your location (browser geolocation). Falls back to world view if denied.</div>
+      <div id="globeWrap" class="globe-wrap">
+        <div id="globe" class="globe"></div>
+        <div id="globeHint" class="globe-hint mono">Loading globe…</div>
       </div>
     </section>
-  </main>
 
-  <footer class="composer">
-    <textarea id="prompt" class="prompt" rows="1" placeholder="Type to ARC…" autocomplete="off" spellcheck="false"></textarea>
-    <button id="send" class="send">Send</button>
-  </footer>
+  </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-          crossorigin=""></script>
+  <!-- Globe libs (CDN) -->
+  <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/globe.gl@2.33.0/dist/globe.gl.min.js"></script>
 
-  <script src="./hud.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
