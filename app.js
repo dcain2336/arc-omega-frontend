@@ -1,185 +1,329 @@
-const CFG = window.ARC_CONFIG || {};
-const BACKEND = (CFG.BACKEND_URL || "").replace(/\/+$/, "");
+// ========= CONFIG =========
+const API_BASE = "https://arc-omega-backend.onrender.com"; // <- change if needed
+const TIME_TICKER_PX_PER_SEC = 85; // <- speed knob (higher = faster)
+const NEWS_MAX = 6;
 
-// --------- Ticker speed (tweak this one number) ---------
-// px per second. Try 70–120 range.
-// If it feels too fast: lower it. Too slow: raise it.
-const TICKER_PX_PER_SEC = 95;
+// For Open-Meteo: if geolocation fails, use Camp Lejeune-ish
+const FALLBACK_COORDS = { lat: 34.75, lon: -77.43, label: "Onslow County" };
 
-const el = (id) => document.getElementById(id);
-const logEl = el("log");
-const apiUrlText = el("apiUrlText");
-const upstreamEl = el("upstream");
+// ========= DOM =========
+const apiBaseText = document.getElementById("apiBaseText");
+const upstreamText = document.getElementById("upstreamText");
+const consoleOut = document.getElementById("consoleOut");
+const promptIn = document.getElementById("promptIn");
+const sendBtn = document.getElementById("sendBtn");
 
-apiUrlText.textContent = BACKEND || "(not set)";
+const weatherText = document.getElementById("weatherText");
+const weatherSource = document.getElementById("weatherSource");
 
-function log(line){
-  logEl.textContent = (logEl.textContent + line + "\n").trimStart();
+const newsText = document.getElementById("newsText");
+const newsSource = document.getElementById("newsSource");
+
+const timeTicker = document.getElementById("timeTicker");
+
+apiBaseText.textContent = API_BASE;
+
+// ========= UTIL =========
+function log(line) {
+  consoleOut.textContent += (consoleOut.textContent ? "\n" : "") + line;
+  consoleOut.scrollTop = consoleOut.scrollHeight;
 }
 
-async function fetchJSON(url, opts){
-  const r = await fetch(url, opts);
-  if(!r.ok){
-    const t = await r.text().catch(()=> "");
-    throw new Error(`HTTP ${r.status} ${t}`);
+async function safeFetchJson(url, opts) {
+  const res = await fetch(url, { ...opts, mode: "cors" });
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* ignore */ }
+  if (!res.ok) {
+    const msg = data?.detail || data?.error || text || `HTTP ${res.status}`;
+    throw new Error(msg);
   }
-  return await r.json();
+  return data ?? {};
 }
 
-// ---------------- Ping / upstream ----------------
-async function ping(){
-  if(!BACKEND) return;
-  try{
-    const j = await fetchJSON(`${BACKEND}/ping`);
-    upstreamEl.textContent = "ok";
-    log(`> Ping\n${BACKEND}/ping -> ${JSON.stringify(j)}`);
-  }catch(e){
-    upstreamEl.textContent = "error";
-    log(`> Ping\nsend error: ${e}`);
+// ========= UPSTREAM HEALTH =========
+async function checkUpstream() {
+  try {
+    const data = await safeFetchJson(`${API_BASE}/ping`);
+    upstreamText.textContent = "ok";
+    log(`> Ping\n${API_BASE}/ping -> ${JSON.stringify(data)}`);
+  } catch (e) {
+    upstreamText.textContent = "down";
+    log(`> Ping\n${API_BASE}/ping -> ERROR: ${e.message}`);
   }
 }
 
-async function sendQuery(text){
-  try{
-    const payload = { message: text, session_id: "web" };
-    const j = await fetchJSON(`${BACKEND}/query`, {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify(payload)
+// ========= COMMAND CENTER =========
+async function sendToArc() {
+  const msg = (promptIn.value || "").trim();
+  if (!msg) return;
+
+  promptIn.value = "";
+  log(`\n> User\n${msg}`);
+
+  try {
+    const payload = { message: msg, session_id: "web", provider: null, model: null };
+    const data = await safeFetchJson(`${API_BASE}/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
-    log(`> ${text}\n${j.ok ? j.text : ("ERR: "+j.error)}\n`);
-  }catch(e){
-    log(`send error: ${e}`);
+    if (data?.ok) {
+      log(`\n> ARC (${data.provider}/${data.model})\n${data.text}`);
+    } else {
+      log(`\n> ARC ERROR\n${data?.error || "unknown error"}`);
+    }
+  } catch (e) {
+    log(`\n> Send error\n${e.message}`);
   }
 }
 
-el("send").addEventListener("click", ()=>{
-  const v = el("msg").value.trim();
-  if(!v) return;
-  el("msg").value = "";
-  sendQuery(v);
+sendBtn.addEventListener("click", sendToArc);
+promptIn.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendToArc();
 });
 
-el("msg").addEventListener("keydown", (e)=>{
-  if(e.key === "Enter"){
-    el("send").click();
-  }
-});
+// ========= WEATHER (Open-Meteo) =========
+async function getCoords() {
+  // Browser geolocation
+  const geo = await new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, label: "Your area" }),
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 120000 }
+    );
+  });
+  return geo || FALLBACK_COORDS;
+}
 
-// ---------------- Weather (Open-Meteo) ----------------
-async function loadWeather(){
-  const w = el("weatherText");
-  try{
-    w.textContent = "Getting location…";
-    const pos = await new Promise((resolve, reject)=>{
-      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy:false, timeout: 8000 });
-    });
-
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
-
+async function loadWeather() {
+  try {
+    const { lat, lon, label } = await getCoords();
     const url =
-      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-      `&current=temperature_2m,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph`;
+      `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}` +
+      `&longitude=${encodeURIComponent(lon)}` +
+      `&current=temperature_2m,wind_speed_10m` +
+      `&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto`;
+    const data = await safeFetchJson(url);
 
-    const j = await fetchJSON(url);
-    const temp = j?.current?.temperature_2m;
-    const wind = j?.current?.wind_speed_10m;
+    const t = data?.current?.temperature_2m;
+    const w = data?.current?.wind_speed_10m;
 
-    w.textContent = `Your area · ${Math.round(temp)}°F · Wind ${wind.toFixed(1)} mph`;
-  }catch(e){
-    w.textContent = "Weather error";
-    console.warn(e);
+    weatherText.textContent = `${label} · ${t ?? "?"}°F · Wind ${w ?? "?"} mph`;
+    weatherSource.textContent = `Source: Open-Meteo (browser geolocation)`;
+  } catch (e) {
+    weatherText.textContent = "Weather error";
+    weatherSource.textContent = e.message;
   }
 }
 
-// ---------------- News (GDELT) ----------------
-async function loadNews(){
-  const n = el("newsText");
-  try{
-    const url =
-      "https://api.gdeltproject.org/api/v2/doc/doc?query=conflict%20OR%20cyber%20OR%20technology&mode=ArtList&format=json&maxrecords=5";
+// ========= NEWS (GDELT 2.1) =========
+function cleanTitle(s) {
+  return (s || "").replace(/\s+/g, " ").trim();
+}
 
-    const j = await fetchJSON(url);
-    const arts = j?.articles || [];
-    if(!arts.length){
-      n.textContent = "No headlines returned.";
+async function loadNews() {
+  try {
+    // Simple public endpoint; no key required
+    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=sourceCountry:US&mode=ArtList&format=json&maxrecords=${NEWS_MAX}`;
+    const data = await safeFetchJson(url);
+
+    const arts = data?.articles || [];
+    if (!arts.length) {
+      newsText.textContent = "No headlines returned.";
+      newsSource.textContent = "Source: GDELT 2.1 (public)";
       return;
     }
-    // show titles only, simple
-    n.innerHTML = arts.map(a => (a.title || "").trim()).filter(Boolean).join(" · ");
-  }catch(e){
-    n.textContent = "News error";
-    console.warn(e);
+
+    // Build a readable list
+    const lines = arts.slice(0, NEWS_MAX).map((a) => {
+      const title = cleanTitle(a?.title) || cleanTitle(a?.seendate) || "Untitled";
+      const src = cleanTitle(a?.sourceCountry) || cleanTitle(a?.sourceCollection) || "";
+      return `• ${title}${src ? ` (${src})` : ""}`;
+    });
+
+    newsText.textContent = lines.join("\n");
+    newsSource.textContent = "Source: GDELT 2.1 (public)";
+  } catch (e) {
+    newsText.textContent = "News error";
+    newsSource.textContent = e.message;
   }
 }
 
-// ---------------- World time ticker ----------------
+// ========= WORLD TIME TICKER (client-side) =========
 const ZONES = [
-  ["CT", "America/Chicago"],
-  ["ET", "America/New_York"],
-  ["MT", "America/Denver"],
-  ["PT", "America/Los_Angeles"],
-  ["UTC", "UTC"],
-  ["London", "Europe/London"],
-  ["Paris", "Europe/Paris"],
-  ["Dubai", "Asia/Dubai"],
-  ["Manila", "Asia/Manila"],
-  ["Guam", "Pacific/Guam"],
-  ["Seoul", "Asia/Seoul"],
-  ["Tokyo", "Asia/Tokyo"],
+  { label: "Local", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
+  { label: "ET", tz: "America/New_York" },
+  { label: "CT", tz: "America/Chicago" },
+  { label: "MT", tz: "America/Denver" },
+  { label: "PT", tz: "America/Los_Angeles" },
+  { label: "UTC", tz: "UTC" },
+  { label: "London", tz: "Europe/London" },
+  { label: "Paris", tz: "Europe/Paris" },
+  { label: "Dubai", tz: "Asia/Dubai" },
+  { label: "Manila", tz: "Asia/Manila" },
+  { label: "Guam", tz: "Pacific/Guam" },
+  { label: "Seoul", tz: "Asia/Seoul" },
+  { label: "Tokyo", tz: "Asia/Tokyo" },
 ];
 
-function fmtTime(tz){
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit", minute:"2-digit", second:"2-digit",
-    hour12: false,
-    timeZone: tz
-  }).format(new Date());
+function fmtTime(tz) {
+  try {
+    return new Intl.DateTimeFormat([], {
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false, timeZone: tz
+    }).format(new Date());
+  } catch {
+    return "--:--:--";
+  }
 }
 
-function buildTickerText(){
-  return ZONES.map(([label, tz]) => `${label} ${fmtTime(tz)}`).join("  •  ");
+function setTickerText() {
+  const parts = ZONES.map(z => `${z.label} ${fmtTime(z.tz)}`);
+  timeTicker.textContent = parts.join("  •  ");
 }
 
-function startTicker(){
-  const ticker = el("timeTicker");
-  const updateText = ()=>{
-    ticker.textContent = buildTickerText();
-  };
-  updateText();
-  setInterval(updateText, 1000);
+// animate ticker by CSS transform; recompute duration based on content width
+function startTicker() {
+  const el = timeTicker;
+  let raf = null;
 
-  // animate by setting duration based on content width
-  const applyAnim = ()=>{
-    // reset animation to recalc
-    ticker.style.animation = "none";
-    const contentWidth = ticker.getBoundingClientRect().width;
-    const outerWidth = ticker.parentElement.getBoundingClientRect().width;
-    const travel = contentWidth + outerWidth;
-    const duration = Math.max(10, travel / TICKER_PX_PER_SEC);
+  function layout() {
+    // reset transform
+    el.style.transform = "translateX(0)";
+    const parent = el.parentElement;
+    if (!parent) return;
 
-    // force reflow
-    void ticker.offsetWidth;
-    ticker.style.animation = `scroll-left ${duration}s linear infinite`;
-  };
+    const parentW = parent.getBoundingClientRect().width;
+    const textW = el.getBoundingClientRect().width;
 
-  // apply now and on resize
-  setTimeout(applyAnim, 50);
-  window.addEventListener("resize", applyAnim);
+    // If text isn't wider than container, just center it
+    if (textW <= parentW) {
+      el.style.paddingLeft = "0";
+      el.style.display = "block";
+      el.style.textAlign = "center";
+      el.style.transform = "none";
+      return;
+    }
+
+    el.style.display = "inline-block";
+    el.style.textAlign = "left";
+    el.style.paddingLeft = "100%";
+
+    const distance = textW + parentW;
+    const seconds = Math.max(8, distance / TIME_TICKER_PX_PER_SEC);
+
+    el.animate(
+      [
+        { transform: `translateX(0)` },
+        { transform: `translateX(-${distance}px)` },
+      ],
+      { duration: seconds * 1000, iterations: Infinity }
+    );
+  }
+
+  // initial and on resize
+  layout();
+  window.addEventListener("resize", () => {
+    // cancel previous animations by cloning node
+    const clone = el.cloneNode(true);
+    el.parentNode.replaceChild(clone, el);
+    // rebind id reference
+    const newEl = document.getElementById("timeTicker");
+    setTickerText();
+    newEl.animate([], { duration: 1 }); // noop
+    // re-run ticker
+    setTimeout(() => location.reload(), 0); // simplest reliable reset
+  });
 }
 
-const styleTag = document.createElement("style");
-styleTag.textContent = `
-@keyframes scroll-left {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-100%); }
-}
-`;
-document.head.appendChild(styleTag);
+// ========= GLOBE (robust + fallback) =========
+async function loadGlobe() {
+  const wrap = document.getElementById("globeWrap");
+  const fallback = document.getElementById("globeFallback");
 
-// ---------------- Init ----------------
-ping();
-loadWeather();
-loadNews();
-startTicker();
+  try {
+    // Basic WebGL support check
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    if (!gl) throw new Error("WebGL not available");
+
+    // Load Three.js from CDN (HTTPS)
+    const [{ default: THREE }, { OrbitControls }] = await Promise.all([
+      import("https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"),
+      import("https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js"),
+    ]);
+
+    // Texture from a stable HTTPS source
+    const textureUrl = "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg";
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    wrap.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera(45, wrap.clientWidth / wrap.clientHeight, 0.1, 100);
+    camera.position.set(0, 0, 3);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.enablePan = false;
+    controls.minDistance = 2.2;
+    controls.maxDistance = 4.5;
+
+    const light = new THREE.DirectionalLight(0xffffff, 1.2);
+    light.position.set(5, 2, 5);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+
+    const geom = new THREE.SphereGeometry(1, 64, 64);
+    const tex = await new THREE.TextureLoader().loadAsync(textureUrl);
+    const mat = new THREE.MeshStandardMaterial({ map: tex });
+    const earth = new THREE.Mesh(geom, mat);
+    scene.add(earth);
+
+    fallback.remove();
+
+    function onResize() {
+      const w = wrap.clientWidth, h = wrap.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener("resize", onResize);
+
+    function tick() {
+      earth.rotation.y += 0.0012;
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(tick);
+    }
+    tick();
+  } catch (e) {
+    // Fallback: show a nice static image if anything fails
+    fallback.textContent = "Globe unavailable (tap refresh). Showing fallback.";
+    fallback.style.padding = "12px";
+
+    const img = new Image();
+    img.alt = "Earth";
+    img.src = "https://upload.wikimedia.org/wikipedia/commons/9/97/The_Earth_seen_from_Apollo_17.jpg";
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.objectFit = "cover";
+    wrap.appendChild(img);
+  }
+}
+
+// ========= BOOT =========
+(async function boot() {
+  await checkUpstream();
+  await loadWeather();
+  await loadNews();
+  setTickerText();
+  setInterval(setTickerText, 1000);
+  startTicker();
+  loadGlobe();
+})();
