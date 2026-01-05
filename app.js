@@ -1,329 +1,218 @@
-// ========= CONFIG =========
-const API_BASE = "https://arc-omega-backend.onrender.com"; // <- change if needed
-const TIME_TICKER_PX_PER_SEC = 85; // <- speed knob (higher = faster)
-const NEWS_MAX = 6;
+// frontend/app.js
 
-// For Open-Meteo: if geolocation fails, use Camp Lejeune-ish
-const FALLBACK_COORDS = { lat: 34.75, lon: -77.43, label: "Onslow County" };
+// ✅ SET THIS ONCE
+const API_BASE = "https://arc-omega-backend.onrender.com";
 
-// ========= DOM =========
-const apiBaseText = document.getElementById("apiBaseText");
+const apiUrlText = document.getElementById("apiUrlText");
 const upstreamText = document.getElementById("upstreamText");
-const consoleOut = document.getElementById("consoleOut");
-const promptIn = document.getElementById("promptIn");
+const upstreamPill = document.getElementById("upstreamPill");
+const terminal = document.getElementById("terminal");
+const promptEl = document.getElementById("prompt");
 const sendBtn = document.getElementById("sendBtn");
 
 const weatherText = document.getElementById("weatherText");
-const weatherSource = document.getElementById("weatherSource");
+const newsTrack = document.getElementById("newsTrack");
 
-const newsText = document.getElementById("newsText");
-const newsSource = document.getElementById("newsSource");
+apiUrlText.textContent = API_BASE;
 
-const timeTicker = document.getElementById("timeTicker");
-
-apiBaseText.textContent = API_BASE;
-
-// ========= UTIL =========
 function log(line) {
-  consoleOut.textContent += (consoleOut.textContent ? "\n" : "") + line;
-  consoleOut.scrollTop = consoleOut.scrollHeight;
+  terminal.textContent += `${line}\n`;
+  terminal.scrollTop = terminal.scrollHeight;
 }
 
-async function safeFetchJson(url, opts) {
-  const res = await fetch(url, { ...opts, mode: "cors" });
-  const text = await res.text();
-  let data = null;
-  try { data = JSON.parse(text); } catch { /* ignore */ }
-  if (!res.ok) {
-    const msg = data?.detail || data?.error || text || `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-  return data ?? {};
+async function apiGet(path) {
+  const r = await fetch(`${API_BASE}${path}`, { method: "GET" });
+  const txt = await r.text();
+  let data;
+  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+  if (!r.ok) throw new Error(`${r.status} ${txt}`);
+  return data;
 }
 
-// ========= UPSTREAM HEALTH =========
-async function checkUpstream() {
+async function apiPost(path, body) {
+  const r = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const txt = await r.text();
+  let data;
+  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+  if (!r.ok) throw new Error(`${r.status} ${txt}`);
+  return data;
+}
+
+// --------------------
+// Backend status polling (throttled)
+// --------------------
+async function refreshBackendStatus() {
   try {
-    const data = await safeFetchJson(`${API_BASE}/ping`);
-    upstreamText.textContent = "ok";
-    log(`> Ping\n${API_BASE}/ping -> ${JSON.stringify(data)}`);
+    const ping = await apiGet("/ping");
+    upstreamText.textContent = ping.ok ? "ok" : "down";
+    upstreamPill.classList.remove("bad");
+    upstreamPill.classList.add("ok");
   } catch (e) {
     upstreamText.textContent = "down";
-    log(`> Ping\n${API_BASE}/ping -> ERROR: ${e.message}`);
+    upstreamPill.classList.remove("ok");
+    upstreamPill.classList.add("bad");
   }
 }
 
-// ========= COMMAND CENTER =========
-async function sendToArc() {
-  const msg = (promptIn.value || "").trim();
+// poll every 10s (fixes your refresh storm)
+refreshBackendStatus();
+setInterval(refreshBackendStatus, 10000);
+
+// --------------------
+// Send message
+// --------------------
+async function sendMessage() {
+  const msg = (promptEl.value || "").trim();
   if (!msg) return;
 
-  promptIn.value = "";
-  log(`\n> User\n${msg}`);
+  promptEl.value = "";
+  log(`> ${msg}`);
 
   try {
-    const payload = { message: msg, session_id: "web", provider: null, model: null };
-    const data = await safeFetchJson(`${API_BASE}/query`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (data?.ok) {
-      log(`\n> ARC (${data.provider}/${data.model})\n${data.text}`);
-    } else {
-      log(`\n> ARC ERROR\n${data?.error || "unknown error"}`);
+    const out = await apiPost("/query", { message: msg, provider: "auto" });
+
+    if (!out.ok) {
+      log(`! error: ${out.error || "unknown"}`);
+      if (out.attempts) log(`attempts: ${JSON.stringify(out.attempts)}`);
+      return;
     }
+
+    log(out.text || "(no text)");
   } catch (e) {
-    log(`\n> Send error\n${e.message}`);
+    log(`send error: ${e.message || String(e)}`);
   }
 }
 
-sendBtn.addEventListener("click", sendToArc);
-promptIn.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendToArc();
+sendBtn.addEventListener("click", sendMessage);
+promptEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendMessage();
 });
 
-// ========= WEATHER (Open-Meteo) =========
-async function getCoords() {
-  // Browser geolocation
-  const geo = await new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, label: "Your area" }),
-      () => resolve(null),
-      { enableHighAccuracy: false, timeout: 5000, maximumAge: 120000 }
-    );
+// --------------------
+// Weather (Open-Meteo) using browser geolocation
+// --------------------
+function getPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) reject(new Error("geolocation not supported"));
+    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: false, timeout: 8000 });
   });
-  return geo || FALLBACK_COORDS;
 }
 
-async function loadWeather() {
+async function refreshWeather() {
   try {
-    const { lat, lon, label } = await getCoords();
-    const url =
-      `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}` +
-      `&longitude=${encodeURIComponent(lon)}` +
-      `&current=temperature_2m,wind_speed_10m` +
-      `&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto`;
-    const data = await safeFetchJson(url);
+    const pos = await getPosition();
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
 
-    const t = data?.current?.temperature_2m;
-    const w = data?.current?.wind_speed_10m;
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`);
+    const data = await r.json();
+    const cw = data.current_weather;
 
-    weatherText.textContent = `${label} · ${t ?? "?"}°F · Wind ${w ?? "?"} mph`;
-    weatherSource.textContent = `Source: Open-Meteo (browser geolocation)`;
+    if (!cw) {
+      weatherText.textContent = "Weather unavailable";
+      return;
+    }
+
+    const tempF = (cw.temperature * 9/5) + 32;
+    weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
   } catch (e) {
-    weatherText.textContent = "Weather error";
-    weatherSource.textContent = e.message;
+    weatherText.textContent = "Weather unavailable (no location / blocked)";
   }
 }
 
-// ========= NEWS (GDELT 2.1) =========
-function cleanTitle(s) {
-  return (s || "").replace(/\s+/g, " ").trim();
-}
+refreshWeather();
+setInterval(refreshWeather, 600000); // every 10 minutes
 
-async function loadNews() {
+// --------------------
+// News ticker (GDELT 2.1)
+// --------------------
+async function refreshNews() {
   try {
-    // Simple public endpoint; no key required
-    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=sourceCountry:US&mode=ArtList&format=json&maxrecords=${NEWS_MAX}`;
-    const data = await safeFetchJson(url);
+    // lightweight feed: last ~24h, English, top items
+    const url = "https://api.gdeltproject.org/api/v2/doc/doc?query=sourceCountry:US&mode=ArtList&format=json&maxrecords=10&format=json";
+    const r = await fetch(url);
+    const data = await r.json();
+    const arts = data.articles || [];
 
-    const arts = data?.articles || [];
     if (!arts.length) {
-      newsText.textContent = "No headlines returned.";
-      newsSource.textContent = "Source: GDELT 2.1 (public)";
+      newsTrack.textContent = "No headlines right now";
       return;
     }
 
-    // Build a readable list
-    const lines = arts.slice(0, NEWS_MAX).map((a) => {
-      const title = cleanTitle(a?.title) || cleanTitle(a?.seendate) || "Untitled";
-      const src = cleanTitle(a?.sourceCountry) || cleanTitle(a?.sourceCollection) || "";
-      return `• ${title}${src ? ` (${src})` : ""}`;
-    });
-
-    newsText.textContent = lines.join("\n");
-    newsSource.textContent = "Source: GDELT 2.1 (public)";
+    const titles = arts.map(a => a.title).filter(Boolean);
+    const line = " • " + titles.join(" • ") + " • ";
+    newsTrack.textContent = line;
   } catch (e) {
-    newsText.textContent = "News error";
-    newsSource.textContent = e.message;
+    newsTrack.textContent = "News unavailable";
   }
 }
 
-// ========= WORLD TIME TICKER (client-side) =========
-const ZONES = [
-  { label: "Local", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
-  { label: "ET", tz: "America/New_York" },
-  { label: "CT", tz: "America/Chicago" },
-  { label: "MT", tz: "America/Denver" },
-  { label: "PT", tz: "America/Los_Angeles" },
-  { label: "UTC", tz: "UTC" },
-  { label: "London", tz: "Europe/London" },
-  { label: "Paris", tz: "Europe/Paris" },
-  { label: "Dubai", tz: "Asia/Dubai" },
-  { label: "Manila", tz: "Asia/Manila" },
-  { label: "Guam", tz: "Pacific/Guam" },
-  { label: "Seoul", tz: "Asia/Seoul" },
-  { label: "Tokyo", tz: "Asia/Tokyo" },
-];
+refreshNews();
+setInterval(refreshNews, 300000); // every 5 minutes
 
-function fmtTime(tz) {
-  try {
-    return new Intl.DateTimeFormat([], {
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-      hour12: false, timeZone: tz
-    }).format(new Date());
-  } catch {
-    return "--:--:--";
-  }
+// --------------------
+// Simple globe (no re-init, no refresh storm)
+// --------------------
+const canvas = document.getElementById("globeCanvas");
+const statusEl = document.getElementById("globeStatus");
+const ctx = canvas.getContext("2d");
+
+let animId = null;
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(rect.width * dpr);
+  canvas.height = Math.floor(rect.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
 
-function setTickerText() {
-  const parts = ZONES.map(z => `${z.label} ${fmtTime(z.tz)}`);
-  timeTicker.textContent = parts.join("  •  ");
-}
+// super-simple animated “globe” placeholder (keeps your UI stable)
+// if you want the 3D lib later, we can swap this out safely.
+let t = 0;
+function draw() {
+  const w = canvas.getBoundingClientRect().width;
+  const h = canvas.getBoundingClientRect().height;
 
-// animate ticker by CSS transform; recompute duration based on content width
-function startTicker() {
-  const el = timeTicker;
-  let raf = null;
+  ctx.clearRect(0, 0, w, h);
 
-  function layout() {
-    // reset transform
-    el.style.transform = "translateX(0)";
-    const parent = el.parentElement;
-    if (!parent) return;
+  const cx = w / 2, cy = h / 2;
+  const r = Math.min(w, h) * 0.33;
 
-    const parentW = parent.getBoundingClientRect().width;
-    const textW = el.getBoundingClientRect().width;
+  // globe
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(45,212,191,0.55)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
 
-    // If text isn't wider than container, just center it
-    if (textW <= parentW) {
-      el.style.paddingLeft = "0";
-      el.style.display = "block";
-      el.style.textAlign = "center";
-      el.style.transform = "none";
-      return;
-    }
-
-    el.style.display = "inline-block";
-    el.style.textAlign = "left";
-    el.style.paddingLeft = "100%";
-
-    const distance = textW + parentW;
-    const seconds = Math.max(8, distance / TIME_TICKER_PX_PER_SEC);
-
-    el.animate(
-      [
-        { transform: `translateX(0)` },
-        { transform: `translateX(-${distance}px)` },
-      ],
-      { duration: seconds * 1000, iterations: Infinity }
-    );
+  // latitude lines
+  for (let i = -2; i <= 2; i++) {
+    const y = cy + (i * r * 0.3);
+    const rx = Math.sqrt(Math.max(0, r*r - (y - cy)*(y - cy)));
+    ctx.beginPath();
+    ctx.ellipse(cx, y, rx, 1, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.stroke();
   }
 
-  // initial and on resize
-  layout();
-  window.addEventListener("resize", () => {
-    // cancel previous animations by cloning node
-    const clone = el.cloneNode(true);
-    el.parentNode.replaceChild(clone, el);
-    // rebind id reference
-    const newEl = document.getElementById("timeTicker");
-    setTickerText();
-    newEl.animate([], { duration: 1 }); // noop
-    // re-run ticker
-    setTimeout(() => location.reload(), 0); // simplest reliable reset
-  });
+  // moving “orbit”
+  const ox = cx + Math.cos(t) * (r * 1.2);
+  const oy = cy + Math.sin(t) * (r * 0.6);
+  ctx.beginPath();
+  ctx.arc(ox, oy, 4, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.fill();
+
+  t += 0.02;
+  animId = requestAnimationFrame(draw);
 }
 
-// ========= GLOBE (robust + fallback) =========
-async function loadGlobe() {
-  const wrap = document.getElementById("globeWrap");
-  const fallback = document.getElementById("globeFallback");
-
-  try {
-    // Basic WebGL support check
-    const canvas = document.createElement("canvas");
-    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
-    if (!gl) throw new Error("WebGL not available");
-
-    // Load Three.js from CDN (HTTPS)
-    const [{ default: THREE }, { OrbitControls }] = await Promise.all([
-      import("https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"),
-      import("https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js"),
-    ]);
-
-    // Texture from a stable HTTPS source
-    const textureUrl = "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg";
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
-    wrap.appendChild(renderer.domElement);
-
-    const scene = new THREE.Scene();
-
-    const camera = new THREE.PerspectiveCamera(45, wrap.clientWidth / wrap.clientHeight, 0.1, 100);
-    camera.position.set(0, 0, 3);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.enablePan = false;
-    controls.minDistance = 2.2;
-    controls.maxDistance = 4.5;
-
-    const light = new THREE.DirectionalLight(0xffffff, 1.2);
-    light.position.set(5, 2, 5);
-    scene.add(light);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-
-    const geom = new THREE.SphereGeometry(1, 64, 64);
-    const tex = await new THREE.TextureLoader().loadAsync(textureUrl);
-    const mat = new THREE.MeshStandardMaterial({ map: tex });
-    const earth = new THREE.Mesh(geom, mat);
-    scene.add(earth);
-
-    fallback.remove();
-
-    function onResize() {
-      const w = wrap.clientWidth, h = wrap.clientHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    }
-    window.addEventListener("resize", onResize);
-
-    function tick() {
-      earth.rotation.y += 0.0012;
-      controls.update();
-      renderer.render(scene, camera);
-      requestAnimationFrame(tick);
-    }
-    tick();
-  } catch (e) {
-    // Fallback: show a nice static image if anything fails
-    fallback.textContent = "Globe unavailable (tap refresh). Showing fallback.";
-    fallback.style.padding = "12px";
-
-    const img = new Image();
-    img.alt = "Earth";
-    img.src = "https://upload.wikimedia.org/wikipedia/commons/9/97/The_Earth_seen_from_Apollo_17.jpg";
-    img.style.width = "100%";
-    img.style.height = "100%";
-    img.style.objectFit = "cover";
-    wrap.appendChild(img);
-  }
-}
-
-// ========= BOOT =========
-(async function boot() {
-  await checkUpstream();
-  await loadWeather();
-  await loadNews();
-  setTickerText();
-  setInterval(setTickerText, 1000);
-  startTicker();
-  loadGlobe();
-})();
+statusEl.textContent = "Running (stable)";
+draw();
