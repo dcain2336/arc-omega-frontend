@@ -30,7 +30,7 @@ function addBubble(role, text) {
 }
 
 async function fetchJSON(url, init) {
-  const res = await fetch(url, init);
+  const res = await fetch(url, { cache: "no-store", ...init }); // ✅ helps iOS caching issues
   const txt = await res.text();
   let data;
   try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
@@ -163,7 +163,6 @@ async function refreshNews() {
 
 /* -------- World Time ticker -------- */
 function buildWorldTimeLine() {
-  // Includes local + US zones + UTC + Philippines/Guam/Seoul/Tokyo + major cities
   const zones = [
     { name: "LOCAL", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
     { name: "ET", tz: "America/New_York" },
@@ -197,10 +196,9 @@ function buildWorldTimeLine() {
 }
 
 function refreshWorldTime() {
-  // Put the line into the scrolling ticker track
   const track = document.querySelector("#tickerTimeTrack");
   if (!track) return;
-  track.textContent = buildWorldTimeLine() + "   •   " + buildWorldTimeLine(); // duplicate for smoother loop
+  track.textContent = buildWorldTimeLine() + "   •   " + buildWorldTimeLine();
 }
 
 /* -------- Map -------- */
@@ -225,7 +223,6 @@ function initMap() {
     $("mapCaption").textContent = "Pinned to your location (browser geolocation).";
   });
 
-  // Fix iOS / orientation render glitches
   setTimeout(() => map.invalidateSize(true), 400);
   window.addEventListener("orientationchange", () => setTimeout(() => map.invalidateSize(true), 400));
   window.addEventListener("resize", () => setTimeout(() => map.invalidateSize(true), 250));
@@ -282,6 +279,6 @@ document.addEventListener("DOMContentLoaded", () => {
   refreshWorldTime();
 
   setInterval(refreshWorldTime, 1000);
-  setInterval(refreshNews, 5 * 60 * 1000);
+  setInterval(refreshNews, 10 * 60 * 1000);
   setInterval(refreshWeather, 10 * 60 * 1000);
 });
