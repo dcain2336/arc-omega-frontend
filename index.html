@@ -3,70 +3,54 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ARC OMEGA</title>
+  <title>ARC-OMEGA</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <main class="wrap">
-    <header class="top">
-      <div class="brand">
-        <div class="logo">ARC</div>
-        <div class="status">
-          <div><span class="muted">State:</span> <b id="stateText">ONLINE</b></div>
-          <div><span class="muted">Council:</span> <b id="councilText">RUNNING</b></div>
-        </div>
-      </div>
+  <div class="container">
+    <header class="header">
+      <h1>ARC-OMEGA</h1>
+      <div class="sub">Mobile-friendly Command Hub</div>
     </header>
 
     <section class="card">
-      <h2>War Chest</h2>
-      <div class="big">$0.00</div>
-      <div class="muted">Placeholder. Later: budgets, giving, mission support, etc.</div>
-    </section>
-
-    <section class="card">
-      <h2>Weather</h2>
-      <div id="weatherText" class="mono">Loading…</div>
-      <div class="muted" id="weatherSource"></div>
-    </section>
-
-    <section class="card">
-      <h2>News</h2>
-      <div id="newsText" class="mono">Loading…</div>
-      <div class="muted" id="newsSource"></div>
-    </section>
-
-    <section class="card">
-      <h2>World Time</h2>
-      <div class="tickerShell">
-        <div id="timeTicker" class="ticker mono">Loading…</div>
-      </div>
-      <div class="muted">Local + US zones + UTC + Manila/Guam/Seoul/Tokyo</div>
-    </section>
-
-    <section class="card">
       <h2>Command Center</h2>
-      <div class="pillRow">
-        <div class="pill"><span class="muted">API:</span> <span id="apiBaseText"></span></div>
-        <div class="pill"><span class="muted">Upstream:</span> <span id="upstreamText">—</span></div>
+      <div class="row">
+        <div class="pill" id="apiUrlPill">API: <span id="apiUrlText"></span></div>
+        <div class="pill ok" id="upstreamPill">Upstream: <span id="upstreamText">unknown</span></div>
       </div>
 
-      <div class="console mono" id="consoleOut"></div>
+      <div class="terminal" id="terminal"></div>
 
       <div class="row">
-        <input id="promptIn" class="input mono" placeholder="Type to ARC…" />
+        <input id="prompt" class="input" placeholder="Type to ARC..." />
         <button id="sendBtn" class="btn">Send</button>
       </div>
     </section>
 
     <section class="card">
       <h2>Globe</h2>
-      <div id="globeWrap" class="globeWrap">
-        <div id="globeFallback" class="globeFallback mono">Loading globe…</div>
+      <div class="globeWrap">
+        <canvas id="globeCanvas"></canvas>
+        <div class="small" id="globeStatus">Initializing…</div>
       </div>
     </section>
-  </main>
 
-  <script src="./app.js" defer></script>
+    <section class="card">
+      <h2>Weather</h2>
+      <div id="weatherText" class="mono">Loading…</div>
+      <div class="small">Source: Open-Meteo (browser geolocation)</div>
+    </section>
+
+    <section class="card">
+      <h2>News</h2>
+      <div class="ticker">
+        <div class="tickerTrack" id="newsTrack">Loading…</div>
+      </div>
+      <div class="small">Source: GDELT 2.1 (public)</div>
+    </section>
+  </div>
+
+  <script src="./app.js"></script>
 </body>
 </html>
