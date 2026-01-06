@@ -5,11 +5,19 @@
   --muted: #9fb2c6;
   --accent: #2dd4bf;
   --danger: #fb7185;
+
+  --panel: rgba(12,19,32,0.92);
+  --border: rgba(255,255,255,0.08);
+  --shadow: 0 10px 30px rgba(0,0,0,0.35);
+
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --sans: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
 }
 
+* { box-sizing: border-box; }
+
 html, body { height: 100%; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -17,10 +25,16 @@ body {
   font-family: var(--sans);
 }
 
+/* Layout */
 .container {
   max-width: 780px;
   margin: 0 auto;
   padding: 18px;
+}
+
+/* Header */
+.header {
+  position: relative;
 }
 
 .header h1 {
@@ -34,12 +48,30 @@ body {
   margin-top: 6px;
 }
 
+/* Header buttons (Tools / Blackout) */
+.headerBtns {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+@media (min-width: 620px) {
+  .headerBtns {
+    position: absolute;
+    right: 0;
+    top: 0;
+    margin-top: 0;
+  }
+}
+
+/* Cards */
 .card {
   background: var(--card);
   border-radius: 14px;
   padding: 14px;
   margin-top: 14px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 
 .card h2 {
@@ -47,6 +79,7 @@ body {
   font-size: 18px;
 }
 
+/* Row helpers */
 .row {
   display: flex;
   gap: 10px;
@@ -54,6 +87,7 @@ body {
   margin-bottom: 10px;
 }
 
+/* Pills */
 .pill {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.08);
@@ -61,11 +95,16 @@ body {
   border-radius: 999px;
   color: var(--muted);
   font-size: 13px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.pill.ok { border-color: rgba(45,212,191,0.4); color: var(--accent); }
-.pill.bad { border-color: rgba(251,113,133,0.4); color: var(--danger); }
+.pill.ok  { border-color: rgba(45,212,191,0.40); color: var(--accent); }
+.pill.bad { border-color: rgba(251,113,133,0.40); color: var(--danger); }
 
+/* Terminal */
 .terminal {
   font-family: var(--mono);
   font-size: 13px;
@@ -78,6 +117,7 @@ body {
   white-space: pre-wrap;
 }
 
+/* Inputs / buttons */
 .input {
   flex: 1;
   padding: 12px 12px;
@@ -94,13 +134,23 @@ body {
   border: 1px solid rgba(45,212,191,0.45);
   background: rgba(45,212,191,0.15);
   color: var(--text);
+  cursor: pointer;
+  user-select: none;
 }
 
 .btn:active { transform: scale(0.98); }
 
-.small { color: var(--muted); font-size: 12px; margin-top: 8px; }
-.mono { font-family: var(--mono); }
+/* ghost button (used in header + panel close) */
+.btn.ghost {
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+}
 
+/* Misc text */
+.small { color: var(--muted); font-size: 12px; margin-top: 8px; }
+.mono  { font-family: var(--mono); }
+
+/* Globe wrap */
 .globeWrap {
   position: relative;
   width: 100%;
@@ -117,6 +167,7 @@ body {
   display: block;
 }
 
+/* News ticker */
 .ticker {
   position: relative;
   overflow: hidden;
@@ -139,4 +190,73 @@ body {
 @keyframes scroll {
   from { transform: translateX(0); }
   to   { transform: translateX(-100%); }
+}
+
+/* -------------------------------------------------
+   NEW: Panel + Blackout (for Tools / Blackout)
+-------------------------------------------------- */
+
+.hidden { display: none !important; }
+
+.panel {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  top: 76px;
+  z-index: 50;
+
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+@media (min-width: 620px) {
+  .panel {
+    left: auto;
+    right: 18px;
+    width: 360px;
+    top: 80px;
+  }
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.18);
+}
+
+.panelTitle {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.panelBody {
+  padding: 12px;
+}
+
+.blackout {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.92);
+  z-index: 80;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 20px;
+}
+
+.blackoutHint {
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-family: var(--mono);
 }
