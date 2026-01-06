@@ -1,6 +1,4 @@
 // frontend/app.js
-
-// ✅ SET THIS ONCE
 const API_BASE = "https://arc-omega-backend.onrender.com";
 
 const apiUrlText = document.getElementById("apiUrlText");
@@ -13,32 +11,24 @@ const sendBtn = document.getElementById("sendBtn");
 const weatherText = document.getElementById("weatherText");
 const newsTrack = document.getElementById("newsTrack");
 
-// Tools / Blackout UI
-const panelTools = document.getElementById("panelTools");
-const btnTools = document.getElementById("btnTools");
-const btnCloseTools = document.getElementById("btnCloseTools");
+// Drawer + blackout
+const drawer = document.getElementById("drawer");
+const drawerOverlay = document.getElementById("drawerOverlay");
+const btnMenu = document.getElementById("btnMenu");
+const btnCloseDrawer = document.getElementById("btnCloseDrawer");
+
 const btnBlackout = document.getElementById("btnBlackout");
 const blackout = document.getElementById("blackout");
-const toolsLog = document.getElementById("toolsLog");
-const btnToolWeather = document.getElementById("btnToolWeather");
-const btnToolNews = document.getElementById("btnToolNews");
 
-// Globe UI
-const canvas = document.getElementById("globeCanvas");
-const statusEl = document.getElementById("globeStatus");
-const globeMeta = document.getElementById("globeMeta");
-const ctx = canvas.getContext("2d");
+const btnRefreshBackend = document.getElementById("btnRefreshBackend");
+const btnRefreshWeather = document.getElementById("btnRefreshWeather");
+const btnRefreshNews = document.getElementById("btnRefreshNews");
 
 apiUrlText.textContent = API_BASE;
 
 function log(line) {
   terminal.textContent += `${line}\n`;
   terminal.scrollTop = terminal.scrollHeight;
-}
-
-function toolMsg(s) {
-  if (!toolsLog) return;
-  toolsLog.textContent = s;
 }
 
 async function apiGet(path) {
@@ -63,40 +53,55 @@ async function apiPost(path, body) {
   return data;
 }
 
-// --------------------
-// Panel + Blackout wiring
-// --------------------
-function toggleHidden(el) { if (el) el.classList.toggle("hidden"); }
-function hide(el) { if (el) el.classList.add("hidden"); }
+/* -------------------------
+   Drawer controls
+-------------------------- */
+function openDrawer() {
+  drawer.classList.add("open");
+  drawerOverlay.classList.remove("hidden");
+}
+function closeDrawer() {
+  drawer.classList.remove("open");
+  drawerOverlay.classList.add("hidden");
+}
+btnMenu.addEventListener("click", openDrawer);
+btnCloseDrawer.addEventListener("click", closeDrawer);
+drawerOverlay.addEventListener("click", closeDrawer);
 
-btnTools?.addEventListener("click", () => toggleHidden(panelTools));
-btnCloseTools?.addEventListener("click", () => hide(panelTools));
+// Blackout
+btnBlackout.addEventListener("click", () => {
+  blackout.classList.remove("hidden");
+  closeDrawer();
+});
+blackout.addEventListener("click", () => blackout.classList.add("hidden"));
 
-btnBlackout?.addEventListener("click", () => toggleHidden(blackout));
-blackout?.addEventListener("click", () => blackout.classList.add("hidden"));
-
-// --------------------
-// Backend status polling (throttled)
-// --------------------
+/* -------------------------
+   Backend status polling
+-------------------------- */
 async function refreshBackendStatus() {
   try {
     const ping = await apiGet("/ping");
     upstreamText.textContent = ping.ok ? "ok" : "down";
     upstreamPill.classList.remove("bad");
     upstreamPill.classList.add("ok");
-  } catch (e) {
+  } catch {
     upstreamText.textContent = "down";
     upstreamPill.classList.remove("ok");
     upstreamPill.classList.add("bad");
   }
 }
 
+btnRefreshBackend.addEventListener("click", () => {
+  refreshBackendStatus();
+  closeDrawer();
+});
+
 refreshBackendStatus();
 setInterval(refreshBackendStatus, 10000);
 
-// --------------------
-// Send message
-// --------------------
+/* -------------------------
+   Send message
+-------------------------- */
 async function sendMessage() {
   const msg = (promptEl.value || "").trim();
   if (!msg) return;
@@ -108,12 +113,10 @@ async function sendMessage() {
     const out = await apiPost("/query", { message: msg, provider: "auto" });
 
     if (!out.ok) {
-      // This is the "providers missing / no providers succeeded" case.
       log(`! error: ${out.error || "unknown"}`);
       if (out.attempts) log(`attempts: ${JSON.stringify(out.attempts)}`);
       return;
     }
-
     log(out.text || "(no text)");
   } catch (e) {
     log(`send error: ${e.message || String(e)}`);
@@ -125,42 +128,24 @@ promptEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendMessage();
 });
 
-// --------------------
-// Browser geolocation helper
-// --------------------
-let lastLoc = null;
-
+/* -------------------------
+   Weather (Open-Meteo)
+-------------------------- */
 function getPosition() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) reject(new Error("geolocation not supported"));
     navigator.geolocation.getCurrentPosition(resolve, reject, {
       enableHighAccuracy: false,
-      timeout: 8000,
-      maximumAge: 5 * 60 * 1000
+      timeout: 8000
     });
   });
 }
 
-async function refreshLocation() {
-  try {
-    const pos = await getPosition();
-    lastLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-    return lastLoc;
-  } catch {
-    lastLoc = null;
-    return null;
-  }
-}
-
-// --------------------
-// Weather (Open-Meteo) using browser geolocation
-// --------------------
 async function refreshWeather() {
   try {
-    const loc = lastLoc || await refreshLocation();
-    if (!loc) throw new Error("no location");
-
-    const { lat, lon } = loc;
+    const pos = await getPosition();
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
 
     const r = await fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`
@@ -175,281 +160,216 @@ async function refreshWeather() {
 
     const tempF = (cw.temperature * 9/5) + 32;
     weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
-    toolMsg("Weather refreshed");
-  } catch (e) {
+  } catch {
     weatherText.textContent = "Weather unavailable (no location / blocked)";
-    toolMsg("Weather failed (location blocked?)");
   }
 }
 
-btnToolWeather?.addEventListener("click", refreshWeather);
+btnRefreshWeather.addEventListener("click", () => {
+  refreshWeather();
+  closeDrawer();
+});
 
 refreshWeather();
-setInterval(refreshWeather, 600000); // every 10 minutes
+setInterval(refreshWeather, 600000);
 
-// --------------------
-// News ticker (GDELT 2.1)
-// NOTE: Some browsers/networks block this via CORS. If so, you should proxy via backend.
-// --------------------
+/* -------------------------
+   News (use backend)
+   Fixes iOS CORS / reliability
+-------------------------- */
 async function refreshNews() {
   try {
-    // ✅ fixed URL (removed duplicate format=json)
-    const url =
-      "https://api.gdeltproject.org/api/v2/doc/doc" +
-      "?query=sourceCountry:US" +
-      "&mode=ArtList" +
-      "&format=json" +
-      "&maxrecords=10";
-
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const data = await r.json();
-
-    const arts = data.articles || [];
-    if (!arts.length) {
+    const data = await apiGet("/tools/news");
+    const headlines = data.headlines || [];
+    if (!headlines.length) {
       newsTrack.textContent = "No headlines right now";
-      toolMsg("News refreshed (empty feed)");
       return;
     }
-
-    const titles = arts.map(a => a.title).filter(Boolean);
-    const line = " • " + titles.join(" • ") + " • ";
+    const line = " • " + headlines.join(" • ") + " • ";
     newsTrack.textContent = line;
-    toolMsg("News refreshed");
-  } catch (e) {
-    // CORS often looks like: TypeError: Failed to fetch
-    const msg = String(e?.message || e);
-    if (msg.includes("Failed to fetch")) {
-      newsTrack.textContent = "News unavailable (likely CORS-blocked). Use backend proxy /tools/news to fix.";
-    } else {
-      newsTrack.textContent = "News unavailable";
-    }
-    toolMsg("News failed");
+  } catch {
+    newsTrack.textContent = "News unavailable";
   }
 }
 
-btnToolNews?.addEventListener("click", refreshNews);
+btnRefreshNews.addEventListener("click", () => {
+  refreshNews();
+  closeDrawer();
+});
 
 refreshNews();
-setInterval(refreshNews, 300000); // every 5 minutes
+setInterval(refreshNews, 300000);
 
-// --------------------
-// Globe canvas (location dot + day/night terminator + wave line)
-// --------------------
+/* -------------------------
+   Globe (canvas) — FIXED
+   + day/night “terminator wave”
+-------------------------- */
+const canvas = document.getElementById("globeCanvas");
+const statusEl = document.getElementById("globeStatus");
+const ctx = canvas?.getContext?.("2d");
+
 let animId = null;
-
-function resizeCanvas() {
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.floor(rect.width * dpr);
-  canvas.height = Math.floor(rect.height * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-window.addEventListener("resize", resizeCanvas);
-resizeCanvas();
-
-// math helpers
-const DEG = Math.PI / 180;
-
-function normLon(lon) {
-  // normalize to [-180, 180)
-  let x = lon;
-  while (x < -180) x += 360;
-  while (x >= 180) x -= 360;
-  return x;
-}
-
-// Approx solar subpoint (good enough for UI day/night)
-// Returns { lat, lon } in degrees where sun is overhead
-function solarSubpoint(date) {
-  // Based on a compact approximation (not high-precision astronomy)
-  const ms = date.getTime();
-  const d = ms / 86400000.0 - 10957.5; // days since ~2000-01-01 noon-ish baseline
-  const g = (357.529 + 0.98560028 * d) * DEG; // mean anomaly
-  const q = (280.459 + 0.98564736 * d) * DEG; // mean longitude
-  const L = q + (1.915 * DEG) * Math.sin(g) + (0.020 * DEG) * Math.sin(2 * g); // ecliptic long
-  const e = 23.439 * DEG; // obliquity
-
-  // declination
-  const sinDec = Math.sin(e) * Math.sin(L);
-  const dec = Math.asin(sinDec);
-
-  // equation of time-ish to get subsolar lon
-  const RA = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L));
-  const GMST = (18.697374558 + 24.06570982441908 * d) % 24; // hours
-  const subLon = normLon((RA / DEG) - (GMST * 15)); // degrees
-
-  return { lat: dec / DEG, lon: subLon };
-}
-
-// Orthographic projection of lat/lon onto circle
-function project(lat, lon, centerLat, centerLon) {
-  // all in radians
-  const φ = lat * DEG;
-  const λ = lon * DEG;
-  const φ0 = centerLat * DEG;
-  const λ0 = centerLon * DEG;
-
-  const cosc =
-    Math.sin(φ0) * Math.sin(φ) +
-    Math.cos(φ0) * Math.cos(φ) * Math.cos(λ - λ0);
-
-  // behind the globe
-  if (cosc < 0) return null;
-
-  const x = Math.cos(φ) * Math.sin(λ - λ0);
-  const y =
-    Math.cos(φ0) * Math.sin(φ) -
-    Math.sin(φ0) * Math.cos(φ) * Math.cos(λ - λ0);
-
-  return { x, y };
-}
-
 let t = 0;
 
-async function draw() {
-  const w = canvas.getBoundingClientRect().width;
-  const h = canvas.getBoundingClientRect().height;
+function safeRect() {
+  // iOS sometimes returns 0 early; use parent fallback.
+  const r = canvas.getBoundingClientRect();
+  const w = Math.max(10, Math.floor(r.width));
+  const h = Math.max(10, Math.floor(r.height));
+  return { w, h };
+}
+
+function resizeCanvas() {
+  if (!canvas || !ctx) return;
+  const { w, h } = safeRect();
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+
+  // draw in CSS pixels
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+window.addEventListener("resize", () => {
+  resizeCanvas();
+  // force a redraw next frame
+});
+window.addEventListener("orientationchange", () => {
+  setTimeout(resizeCanvas, 250);
+});
+
+// Rough solar declination (good enough for a UI terminator)
+function solarDeclinationRad(date) {
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const now = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const doy = Math.floor((now - start) / 86400000);
+  return (23.44 * Math.PI/180) * Math.sin((2 * Math.PI * (doy - 81)) / 365);
+}
+
+// Subsolar longitude in radians (approx):
+// 12:00 UTC -> 0°, 00:00 UTC -> -180°, 18:00 UTC -> +90° etc.
+function subsolarLonRad(date) {
+  const hrs = date.getUTCHours() + date.getUTCMinutes()/60 + date.getUTCSeconds()/3600;
+  const lonDeg = (hrs * 15) - 180;
+  return lonDeg * Math.PI/180;
+}
+
+// Draw a “ham lock” day/night wave across the globe
+function drawTerminatorWave(cx, cy, r, date) {
+  const dec = solarDeclinationRad(date);
+  const lon = subsolarLonRad(date);
+
+  // Use lon to rotate the wave horizontally
+  const phase = lon;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.clip();
+
+  // Shadow “hemisphere” like a moon-phase (simple but looks great)
+  const offset = Math.cos(phase) * r * 0.55;
+  const grd = ctx.createRadialGradient(cx + offset, cy, r*0.15, cx + offset, cy, r*1.2);
+  grd.addColorStop(0, "rgba(0,0,0,0.00)");
+  grd.addColorStop(0.55, "rgba(0,0,0,0.20)");
+  grd.addColorStop(1, "rgba(0,0,0,0.55)");
+
+  ctx.fillStyle = grd;
+  ctx.fillRect(cx - r, cy - r, r*2, r*2);
+
+  // Terminator wave line
+  ctx.beginPath();
+  const amp = r * 0.10;
+  const freq = 6;
+  for (let i = 0; i <= 100; i++) {
+    const u = i / 100;
+    const x = cx - r + (u * r * 2);
+    const yBase = cy + Math.sin(dec) * r * 0.18; // seasonal tilt
+    const y = yBase + Math.sin(u * Math.PI * freq + phase) * amp;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function draw() {
+  if (!canvas || !ctx) {
+    if (statusEl) statusEl.textContent = "Globe failed: canvas context not available";
+    return;
+  }
+
+  const { w, h } = safeRect();
+
+  // If canvas ends up tiny on iOS, resync.
+  if (w < 40 || h < 40) {
+    resizeCanvas();
+  }
+
   ctx.clearRect(0, 0, w, h);
 
   const cx = w / 2, cy = h / 2;
-  const r = Math.min(w, h) * 0.36;
+  const r = Math.min(w, h) * 0.33;
 
-  // Decide globe "center" so your location is near center when available
-  const loc = lastLoc || null;
-  const centerLat = loc ? loc.lat : 15;
-  const centerLon = loc ? loc.lon : -30;
-
-  // base globe outline
+  // Globe outline
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.strokeStyle = "rgba(45,212,191,0.55)";
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // grid lines (lat)
+  // Grid lines
   for (let i = -2; i <= 2; i++) {
-    const y = cy + (i * r * 0.28);
+    const y = cy + (i * r * 0.3);
     const rx = Math.sqrt(Math.max(0, r*r - (y - cy)*(y - cy)));
     ctx.beginPath();
     ctx.ellipse(cx, y, rx, 1, 0, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  for (let j = -2; j <= 2; j++) {
+    const x = cx + (j * r * 0.3);
+    const ry = Math.sqrt(Math.max(0, r*r - (x - cx)*(x - cx)));
+    ctx.beginPath();
+    ctx.ellipse(x, cy, 1, ry, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
     ctx.stroke();
   }
 
-  // --------------------
-  // Day/Night terminator shading
-  // --------------------
-  const sun = solarSubpoint(new Date());
-  // Terminator in this 2D projection is perpendicular to sun direction projected.
-  // We'll approximate by taking the sun vector projected into the screen and shading the opposite half.
-  const sunProj = project(sun.lat, sun.lon, centerLat, centerLon);
+  // Day/Night overlay + wave
+  drawTerminatorWave(cx, cy, r, new Date());
 
-  if (sunProj) {
-    const ang = Math.atan2(sunProj.y, sunProj.x); // direction toward sun on the disk
-    // Night side is opposite the sun
-    const nightAngle = ang + Math.PI;
-
-    // Clip to globe circle
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.clip();
-
-    // rotate and shade half-plane
-    ctx.translate(cx, cy);
-    ctx.rotate(nightAngle);
-
-    // a soft gradient for night
-    const grad = ctx.createLinearGradient(0, 0, r, 0);
-    grad.addColorStop(0, "rgba(0,0,0,0.38)");
-    grad.addColorStop(1, "rgba(0,0,0,0.00)");
-    ctx.fillStyle = grad;
-
-    // fill the half that represents night
-    ctx.fillRect(-r, -r, r, 2*r);
-
-    ctx.restore();
-
-    // --------------------
-    // "Ham lock" wave line on terminator
-    // --------------------
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.clip();
-
-    // Terminator line direction (perpendicular to sun direction)
-    const termAngle = ang + Math.PI / 2;
-
-    ctx.translate(cx, cy);
-    ctx.rotate(termAngle);
-
-    ctx.beginPath();
-    const amp = r * 0.04;
-    const len = r * 1.25;
-    const steps = 80;
-    for (let i = 0; i <= steps; i++) {
-      const x = -len/2 + (len * i / steps);
-      const y = Math.sin((i / steps) * Math.PI * 6 + t) * amp;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = "rgba(255,255,255,0.22)";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
-  // --------------------
-  // Location dot (your pin)
-  // --------------------
-  if (loc) {
-    const p = project(loc.lat, loc.lon, centerLat, centerLon);
-    if (p) {
-      const px = cx + p.x * r;
-      const py = cy + p.y * r;
-
-      // glow ring
-      ctx.beginPath();
-      ctx.arc(px, py, 7, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255,255,255,0.55)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // core
-      ctx.beginPath();
-      ctx.arc(px, py, 3, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.fill();
-
-      globeMeta.textContent = `Pinned • lat ${loc.lat.toFixed(3)} • lon ${loc.lon.toFixed(3)}`;
-    } else {
-      globeMeta.textContent = "Location on far side of globe (not visible)";
-    }
-  } else {
-    globeMeta.textContent = "Location not available (allow location to pin)";
-  }
-
-  // Keep a tiny “satellite” dot so you still get motion even if location is blocked
-  // (this replaces the confusing old orbit dot: it's explicitly a satellite)
-  const sx = cx + Math.cos(t) * (r * 1.10);
-  const sy = cy + Math.sin(t) * (r * 0.55);
+  // “You are here” dot (static, decorative)
   ctx.beginPath();
-  ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.arc(cx - r*0.40, cy - r*0.10, 6, 0, Math.PI*2);
+  ctx.fillStyle = "rgba(255,255,255,0.10)";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx - r*0.40, cy - r*0.10, 2.5, 0, Math.PI*2);
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
   ctx.fill();
 
-  statusEl.textContent = "Running (day/night + location pin)";
+  // Orbiting dot (the “one dot zooming around the circle”)
+  const ox = cx + Math.cos(t) * (r * 1.2);
+  const oy = cy + Math.sin(t) * (r * 0.6);
+  ctx.beginPath();
+  ctx.arc(ox, oy, 4, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.fill();
+
   t += 0.02;
+
+  if (statusEl) statusEl.textContent = "Running (stable)";
   animId = requestAnimationFrame(draw);
 }
 
-// Kick things off: get location once, then render loop
-(async () => {
-  await refreshLocation();
+// Kick canvas sizing AFTER layout is stable (important on iOS)
+setTimeout(() => {
+  resizeCanvas();
   draw();
-  // refresh location occasionally so it can update if you move / permissions change
-  setInterval(refreshLocation, 5 * 60 * 1000);
-})();
+}, 60);
