@@ -11,13 +11,39 @@
     <header class="header">
       <h1>ARC-OMEGA</h1>
       <div class="sub">Mobile-friendly Command Hub</div>
+
+      <div class="headerBtns">
+        <button class="btn ghost" id="btnTools">Tools</button>
+        <button class="btn ghost" id="btnBlackout">Blackout</button>
+      </div>
     </header>
+
+    <!-- Tools panel -->
+    <div class="panel hidden" id="panelTools">
+      <div class="panelHeader">
+        <div class="panelTitle">Tools</div>
+        <button class="btn ghost" id="btnCloseTools">Close</button>
+      </div>
+
+      <div class="panelBody">
+        <div class="row">
+          <button class="btn" id="btnToolWeather">Refresh Weather</button>
+          <button class="btn" id="btnToolNews">Refresh News</button>
+        </div>
+        <div class="small mono" id="toolsLog">—</div>
+      </div>
+    </div>
+
+    <!-- Blackout overlay -->
+    <div class="blackout hidden" id="blackout">
+      <div class="blackoutHint">Blackout on (tap to exit)</div>
+    </div>
 
     <section class="card">
       <h2>Command Center</h2>
       <div class="row">
         <div class="pill" id="apiUrlPill">API: <span id="apiUrlText"></span></div>
-        <div class="pill ok" id="upstreamPill">Upstream: <span id="upstreamText">unknown</span></div>
+        <div class="pill" id="upstreamPill">Upstream: <span id="upstreamText">unknown</span></div>
       </div>
 
       <div class="terminal" id="terminal"></div>
@@ -33,6 +59,7 @@
       <div class="globeWrap">
         <canvas id="globeCanvas"></canvas>
         <div class="small" id="globeStatus">Initializing…</div>
+        <div class="small mono" id="globeMeta">—</div>
       </div>
     </section>
 
@@ -47,7 +74,7 @@
       <div class="ticker">
         <div class="tickerTrack" id="newsTrack">Loading…</div>
       </div>
-      <div class="small">Source: GDELT 2.1 (public)</div>
+      <div class="small">Source: GDELT 2.1 (public; may be CORS-blocked on some networks)</div>
     </section>
   </div>
 
