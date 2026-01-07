@@ -140,7 +140,7 @@ body{
   display:inline-block;
   white-space: nowrap;
   padding-left: 100%;
-  animation: scroll 60s linear infinite;  /* ✅ consistent speed */
+  animation: scroll 120s linear infinite;  /* ✅ consistent speed */
   font-size: 14px;
   color: var(--accent);
 }
