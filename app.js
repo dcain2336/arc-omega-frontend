@@ -11,8 +11,18 @@ const promptEl = document.getElementById("prompt");
 const sendBtn = document.getElementById("sendBtn");
 
 const weatherText = document.getElementById("weatherText");
-const newsTrack = document.getElementById("newsTrack");
-const timeTrack = document.getElementById("timeTrack");
+
+// News marquee
+const newsInner = document.getElementById("newsInner");
+
+// Time ticker
+const timePill = document.getElementById("timePill");
+
+// Files
+const filePick = document.getElementById("filePick");
+const btnUpload = document.getElementById("btnUpload");
+const btnRefreshFiles = document.getElementById("btnRefreshFiles");
+const filesList = document.getElementById("filesList");
 
 // Drawer / overlay / blackout
 const btnMenu = document.getElementById("btnMenu");
@@ -77,6 +87,19 @@ blackout?.addEventListener("click", () => blackout?.classList.add("hidden"));
 btnRefreshBackend?.addEventListener("click", () => refreshBackendStatus(true));
 btnRefreshWeather?.addEventListener("click", refreshWeather);
 btnRefreshNews?.addEventListener("click", refreshNews);
+btnRefreshFiles?.addEventListener("click", refreshFiles);
+
+/* --------------------
+   Local time ticker
+-------------------- */
+function pad2(n){ return String(n).padStart(2,"0"); }
+function tickTime(){
+  const d = new Date();
+  const s = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  if (timePill) timePill.textContent = s;
+}
+tickTime();
+setInterval(tickTime, 250);
 
 /* --------------------
    Backend status polling (throttled)
@@ -85,7 +108,7 @@ let lastBackendRefresh = 0;
 
 async function refreshBackendStatus(force = false) {
   const now = Date.now();
-  if (!force && now - lastBackendRefresh < 8000) return; // throttle
+  if (!force && now - lastBackendRefresh < 8000) return;
   lastBackendRefresh = now;
 
   try {
@@ -104,44 +127,6 @@ refreshBackendStatus();
 setInterval(refreshBackendStatus, 12000);
 
 /* --------------------
-   Time ticker
--------------------- */
-function fmtTZ(date, tz) {
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false
-    }).format(date);
-  } catch {
-    return "??:??:??";
-  }
-}
-
-function refreshTimeTicker() {
-  if (!timeTrack) return;
-
-  const d = new Date();
-  const local = d.toLocaleTimeString([], { hour12: false });
-
-  const utc = fmtTZ(d, "UTC");
-  const manila = fmtTZ(d, "Asia/Manila");
-  const tokyo = fmtTZ(d, "Asia/Tokyo");
-  const london = fmtTZ(d, "Europe/London");
-
-  const line =
-    ` • LOCAL ${local}  • UTC ${utc}  • MANILA ${manila}  • TOKYO ${tokyo}  • LONDON ${london} ` +
-    ` • LOCAL ${local}  • UTC ${utc}  • MANILA ${manila}  • TOKYO ${tokyo}  • LONDON ${london} • `;
-
-  timeTrack.textContent = line;
-}
-
-refreshTimeTicker();
-setInterval(refreshTimeTicker, 1000);
-
-/* --------------------
    Send message
 -------------------- */
 async function sendMessage() {
@@ -152,7 +137,7 @@ async function sendMessage() {
   log(`> ${msg}`);
 
   try {
-    const out = await apiPost("/query", { message: msg }); // provider chain decided by backend
+    const out = await apiPost("/query", { message: msg });
     if (!out.ok) {
       log(`! error: ${out.error || "unknown"}`);
       return;
@@ -219,23 +204,33 @@ refreshWeather();
 setInterval(refreshWeather, 10 * 60 * 1000);
 
 /* --------------------
-   News ticker (backend endpoint)
+   News ticker (smooth scrolling, no flashing)
 -------------------- */
+let _lastNewsLine = "";
+
 async function refreshNews() {
   try {
     const data = await apiGet("/tools/news");
     const headlines = data?.headlines || [];
 
-    if (!headlines.length) {
-      newsTrack.textContent = "No headlines right now • No headlines right now • ";
-      return;
-    }
+    const base = headlines.length
+      ? " • " + headlines.join(" • ") + " • "
+      : "No headlines right now • ";
 
-    // ✅ duplicate so CSS marquee is continuous
-    const line = " • " + headlines.join(" • ") + " • " + headlines.join(" • ") + " • ";
-    newsTrack.textContent = line;
+    // duplicate for clean -50% translate
+    const line = base + base;
+
+    if (line !== _lastNewsLine) {
+      _lastNewsLine = line;
+      if (newsInner) newsInner.textContent = line;
+    }
   } catch (e) {
-    newsTrack.textContent = "News unavailable • News unavailable • ";
+    const base = "News unavailable • ";
+    const line = base + base + base + base;
+    if (line !== _lastNewsLine) {
+      _lastNewsLine = line;
+      if (newsInner) newsInner.textContent = line + line;
+    }
   }
 }
 
@@ -243,7 +238,63 @@ refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
 /* --------------------
-   Canvas Globe with Map Texture + Day/Night Terminator + Location Pin
+   Files (Mongo GridFS via backend)
+-------------------- */
+async function refreshFiles() {
+  try {
+    const data = await apiGet("/files");
+    if (!data.ok) {
+      filesList.textContent = `Files unavailable: ${data.error || "unknown"}`;
+      return;
+    }
+
+    const items = data.files || [];
+    if (!items.length) {
+      filesList.textContent = "No files yet";
+      return;
+    }
+
+    filesList.innerHTML = items.map(f => {
+      const id = encodeURIComponent(f.id);
+      const name = (f.name || "file").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      return `• <a href="${API_BASE}/files/${id}" target="_blank" rel="noopener">${name}</a> (${f.size} bytes)`;
+    }).join("<br/>");
+  } catch (e) {
+    filesList.textContent = "File list unavailable";
+  }
+}
+
+async function uploadFile() {
+  const file = filePick?.files?.[0];
+  if (!file) return;
+
+  try {
+    const form = new FormData();
+    form.append("file", file);
+
+    const r = await fetch(`${API_BASE}/files/upload`, {
+      method: "POST",
+      body: form,
+      cache: "no-store",
+    });
+
+    const txt = await r.text();
+    let data;
+    try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+    if (!r.ok || !data.ok) throw new Error(data.error || txt);
+
+    log(`uploaded: ${data.name} (${data.size} bytes)`);
+    await refreshFiles();
+  } catch (e) {
+    log(`upload error: ${e.message || String(e)}`);
+  }
+}
+
+btnUpload?.addEventListener("click", uploadFile);
+refreshFiles();
+
+/* --------------------
+   Globe with texture + terminator
 -------------------- */
 const canvas = document.getElementById("globeCanvas");
 const statusEl = document.getElementById("globeStatus");
@@ -253,9 +304,26 @@ let animId = null;
 let lastLayoutW = 0;
 let lastLayoutH = 0;
 
-// user location (optional)
 let userLat = null;
 let userLon = null;
+
+// Texture
+const tex = new Image();
+tex.crossOrigin = "anonymous";
+tex.src = "./assets/world-map-blue.png";
+let texReady = false;
+let texData = null;
+
+tex.onload = () => {
+  texReady = true;
+  // cache pixel data for fast sampling
+  const oc = document.createElement("canvas");
+  oc.width = tex.width;
+  oc.height = tex.height;
+  const octx = oc.getContext("2d");
+  octx.drawImage(tex, 0, 0);
+  texData = octx.getImageData(0, 0, tex.width, tex.height).data;
+};
 
 function setCanvasSize() {
   if (!canvas || !ctx) return;
@@ -265,7 +333,6 @@ function setCanvasSize() {
   const h = Math.max(1, Math.floor(rect.height));
   const dpr = window.devicePixelRatio || 1;
 
-  // only resize if layout changed to avoid flicker
   if (w === lastLayoutW && h === lastLayoutH && canvas.width > 0) return;
 
   lastLayoutW = w;
@@ -277,20 +344,18 @@ function setCanvasSize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-function lonLatToSphereXY(lonDeg, latDeg, rotDeg) {
-  // Orthographic projection centered at lon=rotDeg, lat=0
+function lonLatToSphereXYZ(lonDeg, latDeg, rotDeg) {
   const lon = (lonDeg - rotDeg) * Math.PI / 180;
   const lat = latDeg * Math.PI / 180;
 
   const x = Math.cos(lat) * Math.sin(lon);
   const y = Math.sin(lat);
-  const z = Math.cos(lat) * Math.cos(lon); // visible if z>0
+  const z = Math.cos(lat) * Math.cos(lon);
 
   return { x, y, z };
 }
 
 function solarSubpointUTC(d) {
-  // Approximate subsolar point for shading visuals.
   const ms = d.getTime();
   const jd = ms / 86400000 + 2440587.5;
   const n = jd - 2451545.0;
@@ -300,7 +365,7 @@ function solarSubpointUTC(d) {
   const lambda = L + 1.915 * Math.sin(g * Math.PI / 180) + 0.020 * Math.sin(2 * g * Math.PI / 180);
 
   const eps = 23.439 - 0.0000004 * n;
-  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180)); // declination
+  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180));
 
   const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
   const subLon = (180 - timeUTC * 15) % 360;
@@ -309,13 +374,32 @@ function solarSubpointUTC(d) {
   return { lat: subLat, lon: subLon };
 }
 
-// ✅ Map texture from your repo: /assets/world-map-blue.png
-const LAND_IMG_SRC = "./assets/world-map-blue.png";
-const landImg = new Image();
-let landReady = false;
-landImg.onload = () => { landReady = true; };
-landImg.onerror = () => { landReady = false; };
-landImg.src = LAND_IMG_SRC;
+// Sample the texture by lon/lat -> pixel
+function sampleTexRGBA(lonDeg, latDeg){
+  if (!texReady || !texData) return [0,0,0,0];
+
+  // equirectangular map: lon -180..180 => x 0..W
+  // lat 90..-90 => y 0..H
+  const W = tex.width;
+  const H = tex.height;
+
+  let x = ( (lonDeg + 180) / 360 ) * (W - 1);
+  let y = ( (90 - latDeg) / 180 ) * (H - 1);
+
+  x = Math.max(0, Math.min(W - 1, x));
+  y = Math.max(0, Math.min(H - 1, y));
+
+  const ix = (x|0);
+  const iy = (y|0);
+  const idx = (iy * W + ix) * 4;
+
+  return [
+    texData[idx],
+    texData[idx+1],
+    texData[idx+2],
+    texData[idx+3]
+  ];
+}
 
 function drawGlobe(t) {
   if (!canvas || !ctx) return;
@@ -338,16 +422,7 @@ function drawGlobe(t) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
 
-  // sphere base
-  const fill = ctx.createRadialGradient(cx - r * 0.25, cy - r * 0.25, r * 0.2, cx, cy, r);
-  fill.addColorStop(0, "rgba(255,255,255,0.07)");
-  fill.addColorStop(1, "rgba(0,0,0,0.30)");
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = fill;
-  ctx.fill();
-
-  // outline
+  // sphere outline
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.strokeStyle = "rgba(45,212,191,0.55)";
@@ -355,105 +430,79 @@ function drawGlobe(t) {
   ctx.stroke();
 
   // rotation
-  const rotDeg = (t * 0.6) % 360;
+  const rotDeg = (t * 6) % 360;
 
-  // ---------
-  // Texture paint: project equirectangular map onto globe
-  // ---------
-  if (landReady) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.clip();
-
-    // degrees step: lower = prettier, higher = faster
-    const step = 2;
-
-    for (let lon = -180; lon <= 180; lon += step) {
-      const texLon = ((lon - rotDeg + 540) % 360) - 180; // normalize -180..180
-      const u = (texLon + 180) / 360; // 0..1
-      const sx = Math.floor(u * (landImg.width - 1));
-
-      for (let lat = -90; lat <= 90; lat += step) {
-        const p = lonLatToSphereXY(lon, lat, rotDeg);
-        if (p.z <= 0) continue;
-
-        const v = (90 - lat) / 180; // 0..1 (top->bottom)
-        const sy = Math.floor(v * (landImg.height - 1));
-
-        const x = cx + p.x * r;
-        const y = cy - p.y * r;
-
-        // 1x1 sample scaled to small block
-        ctx.drawImage(landImg, sx, sy, 1, 1, x, y, 1.8, 1.8);
-      }
-    }
-
-    ctx.restore();
-  }
-
-  // Graticule (optional subtle)
-  ctx.lineWidth = 1;
-  for (let lat = -60; lat <= 60; lat += 30) {
-    ctx.beginPath();
-    let started = false;
-    for (let lon = -180; lon <= 180; lon += 6) {
-      const p = lonLatToSphereXY(lon, lat, rotDeg);
-      if (p.z <= 0) continue;
-      const x = cx + p.x * r;
-      const y = cy - p.y * r;
-      if (!started) { ctx.moveTo(x, y); started = true; }
-      else ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    ctx.stroke();
-  }
-
-  // Day/Night overlay
-  const now = new Date();
-  const sun = solarSubpointUTC(now);
-
-  const sunP = lonLatToSphereXY(sun.lon, sun.lat, rotDeg);
-  const sunDir = { x: sunP.x, y: sunP.y, z: sunP.z };
-
+  // Clip to sphere
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
 
-  // Shade night side (dot < 0)
-  for (let lat = -90; lat <= 90; lat += 2) {
-    for (let lon = -180; lon <= 180; lon += 2) {
-      const p = lonLatToSphereXY(lon, lat, rotDeg);
-      if (p.z <= 0) continue;
-      const dot = (p.x * sunDir.x + p.y * sunDir.y + p.z * sunDir.z);
+  // Draw texture by sampling visible hemisphere
+  // step controls quality/speed (2 is good on mobile)
+  const step = 2;
+
+  if (texReady && texData) {
+    for (let py = -r; py <= r; py += step) {
+      for (let px = -r; px <= r; px += step) {
+        const nx = px / r;
+        const ny = -py / r;
+        const rr = nx*nx + ny*ny;
+        if (rr > 1) continue;
+
+        // orthographic inverse: z = sqrt(1-x^2-y^2)
+        const nz = Math.sqrt(1 - rr);
+
+        // convert xyz back to lon/lat (in rotated space)
+        // We built xyz such that z is "toward viewer". Inverse rotation:
+        // lon' = atan2(x, z), lat = asin(y)
+        const lonPrime = Math.atan2(nx, nz) * 180/Math.PI;
+        const lat = Math.asin(ny) * 180/Math.PI;
+
+        // Apply globe rotation: lon = lon' + rotDeg
+        let lon = lonPrime + rotDeg;
+        if (lon > 180) lon -= 360;
+        if (lon < -180) lon += 360;
+
+        const [R,G,B,A] = sampleTexRGBA(lon, lat);
+        if (A === 0) continue;
+
+        ctx.fillStyle = `rgba(${R},${G},${B},${(A/255)})`;
+        ctx.fillRect(cx + px, cy + py, step, step);
+      }
+    }
+  } else {
+    // fallback sphere fill if texture isn't ready
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.fillRect(cx - r, cy - r, r*2, r*2);
+  }
+
+  // Day/Night shading
+  const now = new Date();
+  const sun = solarSubpointUTC(now);
+  const sunP = lonLatToSphereXYZ(sun.lon, sun.lat, rotDeg);
+  const sunDir = { x: sunP.x, y: sunP.y, z: sunP.z };
+
+  ctx.fillStyle = "rgba(0,0,0,0.34)";
+  for (let py = -r; py <= r; py += 3) {
+    for (let px = -r; px <= r; px += 3) {
+      const nx = px / r;
+      const ny = -py / r;
+      const rr = nx*nx + ny*ny;
+      if (rr > 1) continue;
+      const nz = Math.sqrt(1 - rr);
+
+      // dot(view_xyz, sunDir) < 0 => night
+      const dot = nx*sunDir.x + ny*sunDir.y + nz*sunDir.z;
       if (dot >= 0) continue;
 
-      const x = cx + p.x * r;
-      const y = cy - p.y * r;
-
-      // feather darkness near terminator
-      const a = Math.min(0.55, Math.max(0.18, (-dot) * 0.55));
-      ctx.fillStyle = `rgba(0,0,0,${a})`;
-      ctx.fillRect(x, y, 1.6, 1.6);
+      ctx.fillRect(cx + px, cy + py, 3, 3);
     }
   }
 
-  ctx.restore();
-
-  // Sun marker
-  if (sunP.z > 0) {
-    const sx = cx + sunP.x * r;
-    const sy = cy - sunP.y * r;
-    ctx.beginPath();
-    ctx.arc(sx, sy, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.80)";
-    ctx.fill();
-  }
-
-  // User pin (if available)
+  // user pin
   if (userLat != null && userLon != null) {
-    const u = lonLatToSphereXY(userLon, userLat, rotDeg);
+    const u = lonLatToSphereXYZ(userLon, userLat, rotDeg);
     if (u.z > 0) {
       const ux = cx + u.x * r;
       const uy = cy - u.y * r;
@@ -470,6 +519,8 @@ function drawGlobe(t) {
       ctx.stroke();
     }
   }
+
+  ctx.restore();
 }
 
 function startGlobe() {
@@ -478,7 +529,7 @@ function startGlobe() {
     return;
   }
 
-  if (statusEl) statusEl.textContent = landReady ? "Globe running" : "Globe running (map not loaded)";
+  if (statusEl) statusEl.textContent = "Globe running";
   let start = performance.now();
 
   function loop(now) {
@@ -504,7 +555,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// Get user location once (best-effort) and keep it
+// Get user location once (best-effort)
 (async () => {
   const pos = await getPosition();
   if (pos) {
@@ -520,7 +571,6 @@ document.addEventListener("visibilitychange", () => {
   }, 120);
 })();
 
-// Kick immediately in case location takes too long
 setTimeout(() => {
   setCanvasSize();
   startGlobe();
