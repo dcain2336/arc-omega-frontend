@@ -12,9 +12,7 @@ const sendBtn = document.getElementById("sendBtn");
 
 const weatherText = document.getElementById("weatherText");
 const newsTrack = document.getElementById("newsTrack");
-
-// ✅ Time ticker
-const timeTicker = document.getElementById("timeTicker");
+const timeTrack = document.getElementById("timeTrack");
 
 // Drawer / overlay / blackout
 const btnMenu = document.getElementById("btnMenu");
@@ -81,20 +79,6 @@ btnRefreshWeather?.addEventListener("click", refreshWeather);
 btnRefreshNews?.addEventListener("click", refreshNews);
 
 /* --------------------
-   Time ticker (restored)
--------------------- */
-function startTimeTicker() {
-  function tick() {
-    if (!timeTicker) return;
-    const now = new Date();
-    timeTicker.textContent = `Local time: ${now.toLocaleString()}`;
-  }
-  tick();
-  setInterval(tick, 1000);
-}
-startTimeTicker();
-
-/* --------------------
    Backend status polling (throttled)
 -------------------- */
 let lastBackendRefresh = 0;
@@ -118,6 +102,44 @@ async function refreshBackendStatus(force = false) {
 
 refreshBackendStatus();
 setInterval(refreshBackendStatus, 12000);
+
+/* --------------------
+   Time ticker
+-------------------- */
+function fmtTZ(date, tz) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).format(date);
+  } catch {
+    return "??:??:??";
+  }
+}
+
+function refreshTimeTicker() {
+  if (!timeTrack) return;
+
+  const d = new Date();
+  const local = d.toLocaleTimeString([], { hour12: false });
+
+  const utc = fmtTZ(d, "UTC");
+  const manila = fmtTZ(d, "Asia/Manila");
+  const tokyo = fmtTZ(d, "Asia/Tokyo");
+  const london = fmtTZ(d, "Europe/London");
+
+  const line =
+    ` • LOCAL ${local}  • UTC ${utc}  • MANILA ${manila}  • TOKYO ${tokyo}  • LONDON ${london} ` +
+    ` • LOCAL ${local}  • UTC ${utc}  • MANILA ${manila}  • TOKYO ${tokyo}  • LONDON ${london} • `;
+
+  timeTrack.textContent = line;
+}
+
+refreshTimeTicker();
+setInterval(refreshTimeTicker, 1000);
 
 /* --------------------
    Send message
@@ -204,17 +226,16 @@ async function refreshNews() {
     const data = await apiGet("/tools/news");
     const headlines = data?.headlines || [];
 
-    if (!Array.isArray(headlines) || headlines.length === 0) {
-      // show real backend error if present
-      const err = data?.error || data?.raw || "No headlines right now";
-      newsTrack.textContent = `News error: ${String(err).slice(0, 160)}`;
+    if (!headlines.length) {
+      newsTrack.textContent = "No headlines right now • No headlines right now • ";
       return;
     }
 
-    const line = " • " + headlines.join(" • ") + " • ";
+    // ✅ duplicate so CSS marquee is continuous
+    const line = " • " + headlines.join(" • ") + " • " + headlines.join(" • ") + " • ";
     newsTrack.textContent = line;
   } catch (e) {
-    newsTrack.textContent = `News unavailable (${e.message || String(e)})`;
+    newsTrack.textContent = "News unavailable • News unavailable • ";
   }
 }
 
@@ -222,8 +243,7 @@ refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
 /* --------------------
-   Canvas Globe with Day/Night Terminator + Location Pin
-   (Ham-clock style vibe)
+   Canvas Globe with Map Texture + Day/Night Terminator + Location Pin
 -------------------- */
 const canvas = document.getElementById("globeCanvas");
 const statusEl = document.getElementById("globeStatus");
@@ -270,8 +290,7 @@ function lonLatToSphereXY(lonDeg, latDeg, rotDeg) {
 }
 
 function solarSubpointUTC(d) {
-  // Approximate subsolar point (lat, lon) using NOAA-style simple algorithm
-  // Good enough for terminator shading visuals.
+  // Approximate subsolar point for shading visuals.
   const ms = d.getTime();
   const jd = ms / 86400000 + 2440587.5;
   const n = jd - 2451545.0;
@@ -283,13 +302,20 @@ function solarSubpointUTC(d) {
   const eps = 23.439 - 0.0000004 * n;
   const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180)); // declination
 
-  // Equation of time-ish for subsolar lon
   const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
-  const subLon = (180 - timeUTC * 15) % 360; // rough: sun overhead at 12:00 UTC -> lon 0
+  const subLon = (180 - timeUTC * 15) % 360;
   const subLat = delta * 180 / Math.PI;
 
   return { lat: subLat, lon: subLon };
 }
+
+// ✅ Map texture from your repo: /assets/world-map-blue.png
+const LAND_IMG_SRC = "./assets/world-map-blue.png";
+const landImg = new Image();
+let landReady = false;
+landImg.onload = () => { landReady = true; };
+landImg.onerror = () => { landReady = false; };
+landImg.src = LAND_IMG_SRC;
 
 function drawGlobe(t) {
   if (!canvas || !ctx) return;
@@ -312,16 +338,16 @@ function drawGlobe(t) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
 
-  // sphere fill
+  // sphere base
   const fill = ctx.createRadialGradient(cx - r * 0.25, cy - r * 0.25, r * 0.2, cx, cy, r);
-  fill.addColorStop(0, "rgba(255,255,255,0.08)");
-  fill.addColorStop(1, "rgba(0,0,0,0.28)");
+  fill.addColorStop(0, "rgba(255,255,255,0.07)");
+  fill.addColorStop(1, "rgba(0,0,0,0.30)");
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fillStyle = fill;
   ctx.fill();
 
-  // sphere outline
+  // outline
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.strokeStyle = "rgba(45,212,191,0.55)";
@@ -331,28 +357,47 @@ function drawGlobe(t) {
   // rotation
   const rotDeg = (t * 0.6) % 360;
 
-  // graticule
+  // ---------
+  // Texture paint: project equirectangular map onto globe
+  // ---------
+  if (landReady) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+
+    // degrees step: lower = prettier, higher = faster
+    const step = 2;
+
+    for (let lon = -180; lon <= 180; lon += step) {
+      const texLon = ((lon - rotDeg + 540) % 360) - 180; // normalize -180..180
+      const u = (texLon + 180) / 360; // 0..1
+      const sx = Math.floor(u * (landImg.width - 1));
+
+      for (let lat = -90; lat <= 90; lat += step) {
+        const p = lonLatToSphereXY(lon, lat, rotDeg);
+        if (p.z <= 0) continue;
+
+        const v = (90 - lat) / 180; // 0..1 (top->bottom)
+        const sy = Math.floor(v * (landImg.height - 1));
+
+        const x = cx + p.x * r;
+        const y = cy - p.y * r;
+
+        // 1x1 sample scaled to small block
+        ctx.drawImage(landImg, sx, sy, 1, 1, x, y, 1.8, 1.8);
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // Graticule (optional subtle)
   ctx.lineWidth = 1;
   for (let lat = -60; lat <= 60; lat += 30) {
-    // latitude line: sample points
     ctx.beginPath();
     let started = false;
     for (let lon = -180; lon <= 180; lon += 6) {
-      const p = lonLatToSphereXY(lon, lat, rotDeg);
-      if (p.z <= 0) continue;
-      const x = cx + p.x * r;
-      const y = cy - p.y * r;
-      if (!started) { ctx.moveTo(x, y); started = true; }
-      else ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.stroke();
-  }
-  for (let lon = -180; lon <= 180; lon += 30) {
-    // longitude line
-    ctx.beginPath();
-    let started = false;
-    for (let lat = -90; lat <= 90; lat += 4) {
       const p = lonLatToSphereXY(lon, lat, rotDeg);
       if (p.z <= 0) continue;
       const x = cx + p.x * r;
@@ -364,7 +409,7 @@ function drawGlobe(t) {
     ctx.stroke();
   }
 
-  // Day/Night terminator overlay
+  // Day/Night overlay
   const now = new Date();
   const sun = solarSubpointUTC(now);
 
@@ -376,15 +421,20 @@ function drawGlobe(t) {
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
 
-  ctx.fillStyle = "rgba(0,0,0,0.32)";
+  // Shade night side (dot < 0)
   for (let lat = -90; lat <= 90; lat += 2) {
     for (let lon = -180; lon <= 180; lon += 2) {
       const p = lonLatToSphereXY(lon, lat, rotDeg);
       if (p.z <= 0) continue;
       const dot = (p.x * sunDir.x + p.y * sunDir.y + p.z * sunDir.z);
       if (dot >= 0) continue;
+
       const x = cx + p.x * r;
       const y = cy - p.y * r;
+
+      // feather darkness near terminator
+      const a = Math.min(0.55, Math.max(0.18, (-dot) * 0.55));
+      ctx.fillStyle = `rgba(0,0,0,${a})`;
       ctx.fillRect(x, y, 1.6, 1.6);
     }
   }
@@ -397,11 +447,11 @@ function drawGlobe(t) {
     const sy = cy - sunP.y * r;
     ctx.beginPath();
     ctx.arc(sx, sy, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillStyle = "rgba(255,255,255,0.80)";
     ctx.fill();
   }
 
-  // User pin
+  // User pin (if available)
   if (userLat != null && userLon != null) {
     const u = lonLatToSphereXY(userLon, userLat, rotDeg);
     if (u.z > 0) {
@@ -428,7 +478,7 @@ function startGlobe() {
     return;
   }
 
-  if (statusEl) statusEl.textContent = "Globe running";
+  if (statusEl) statusEl.textContent = landReady ? "Globe running" : "Globe running (map not loaded)";
   let start = performance.now();
 
   function loop(now) {
@@ -454,7 +504,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// Get user location once (best-effort)
+// Get user location once (best-effort) and keep it
 (async () => {
   const pos = await getPosition();
   if (pos) {
@@ -470,7 +520,7 @@ document.addEventListener("visibilitychange", () => {
   }, 120);
 })();
 
-// Kick immediately
+// Kick immediately in case location takes too long
 setTimeout(() => {
   setCanvasSize();
   startGlobe();
