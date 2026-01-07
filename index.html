@@ -3,91 +3,84 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ARC-OMEGA</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <title>ARC OMEGA</title>
+  <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
 
-  <!-- Hamburger -->
-  <button class="hamburger" id="btnMenu" aria-label="Open menu">☰</button>
-
-  <!-- Side drawer + overlay -->
-  <div class="drawerOverlay hidden" id="drawerOverlay"></div>
-
-  <aside class="drawer" id="drawer">
+  <!-- Drawer -->
+  <div id="drawer" class="drawer">
     <div class="drawerHeader">
-      <div class="drawerTitle">ARC MENU</div>
-      <button class="btn ghost" id="btnCloseDrawer">Close</button>
+      <div class="drawerTitle">ARC OMEGA</div>
+      <button id="btnCloseDrawer" class="iconBtn">✕</button>
     </div>
 
     <div class="drawerBody">
-      <div class="small mono">API</div>
-      <div class="pill" id="apiUrlPill">API: <span id="apiUrlText"></span></div>
-
-      <div class="divider"></div>
-
-      <button class="btn" id="btnRefreshBackend">Refresh backend status</button>
-      <button class="btn" id="btnRefreshWeather">Refresh weather</button>
-      <button class="btn" id="btnRefreshNews">Refresh news</button>
-
-      <div class="divider"></div>
-
-      <button class="btn ghost" id="btnBlackout">Blackout</button>
-      <div class="small">
-        Tip: tap the blackout screen to exit.
-      </div>
+      <button id="btnRefreshBackend" class="btn">Refresh backend</button>
+      <button id="btnRefreshWeather" class="btn">Refresh weather</button>
+      <button id="btnRefreshNews" class="btn">Refresh news</button>
+      <button id="btnBlackout" class="btn danger">Blackout</button>
     </div>
-  </aside>
-
-  <!-- Blackout -->
-  <div class="blackout hidden" id="blackout">
-    <div class="blackoutHint">BLACKOUT — tap anywhere to exit</div>
   </div>
 
-  <div class="container">
-    <header class="header">
-      <h1>ARC-OMEGA</h1>
-      <div class="sub">Mobile-friendly Command Hub</div>
-    </header>
+  <div id="drawerOverlay" class="overlay hidden"></div>
 
-    <section class="card">
-      <h2>Command Center</h2>
-      <div class="row">
-        <div class="pill ok" id="upstreamPill">Upstream: <span id="upstreamText">unknown</span></div>
+  <!-- Blackout -->
+  <div id="blackout" class="blackout hidden"></div>
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <button id="btnMenu" class="iconBtn">☰</button>
+
+    <div class="topbarMid">
+      <div class="apiLine">
+        API: <span id="apiUrlText"></span>
       </div>
-
-      <div class="terminal" id="terminal"></div>
-
-      <div class="row">
-        <input id="prompt" class="input" placeholder="Type to ARC..." />
-        <button id="sendBtn" class="btn">Send</button>
+      <div class="statusLine">
+        Upstream:
+        <span id="upstreamPill" class="pill ok">
+          <span id="upstreamText">ok</span>
+        </span>
       </div>
-    </section>
+    </div>
+  </header>
 
-    <section class="card">
-      <h2>Globe</h2>
-      <div class="globeWrap">
-        <canvas id="globeCanvas"></canvas>
-        <div class="small" id="globeStatus">Initializing…</div>
+  <main class="wrap">
+
+    <section class="card globeCard">
+      <canvas id="globeCanvas"></canvas>
+      <div class="globeFooter">
+        <div id="globeStatus">Globe loading…</div>
+        <div class="hint">Day/Night overlay uses device time (no external API).</div>
       </div>
-      <div class="small">Day/Night overlay uses device time (no external API).</div>
     </section>
 
     <section class="card">
       <h2>Weather</h2>
       <div id="weatherText" class="mono">Loading…</div>
-      <div class="small">Source: Open-Meteo (browser geolocation)</div>
+      <div class="subtle">Source: Open-Meteo (browser geolocation)</div>
     </section>
 
     <section class="card">
       <h2>News</h2>
       <div class="ticker">
-        <div class="tickerTrack" id="newsTrack">Loading…</div>
+        <div id="newsTrack" class="mono">Loading…</div>
       </div>
-      <div class="small">Source: Backend (/tools/news) → NewsData.io (keyed)</div>
+      <div class="subtle">Source: Backend (/tools/news)</div>
     </section>
-  </div>
 
-  <script src="./app.js"></script>
+    <section class="card">
+      <h2>Terminal</h2>
+      <pre id="terminal" class="terminal"></pre>
+
+      <div class="promptRow">
+        <input id="prompt" class="prompt" placeholder="Type a message…" />
+        <button id="sendBtn" class="btn">Send</button>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/app.js"></script>
 </body>
 </html>
