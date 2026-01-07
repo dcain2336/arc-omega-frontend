@@ -4,12 +4,16 @@
   --border: rgba(255,255,255,0.08);
   --text: rgba(255,255,255,0.92);
   --muted: rgba(255,255,255,0.60);
-  --accent: rgba(45,212,191,0.95);
+
+  /* Match pill clock vibe */
+  --pillText: rgba(45,212,191,0.95);
+  --pillBorder: rgba(45,212,191,0.35);
+  --pillBg: rgba(45,212,191,0.06);
+
   --danger: rgba(251,113,133,0.95);
 
-  /* ✅ slow down ticker here */
-  --marqueeSeconds: 55s;
-  --worldSeconds: 28s;
+  /* ✅ Make BOTH tickers same speed */
+  --tickerSeconds: 28s; /* same as world ticker */
 }
 
 *{ box-sizing: border-box; }
@@ -18,7 +22,7 @@ html, body{
   margin:0;
   padding:0;
   width:100%;
-  overflow-x:hidden; /* ✅ kill sideways scroll */
+  overflow-x:hidden;
 }
 
 body{
@@ -37,7 +41,7 @@ body{
   margin: 16px auto 40px;
   display: grid;
   gap: 14px;
-  overflow-x:hidden; /* ✅ extra safety */
+  overflow-x:hidden;
 }
 
 .card{
@@ -71,7 +75,7 @@ body{
   display:flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 0; /* ✅ prevents stretch */
+  min-width: 0;
 }
 
 .topbarRight{
@@ -95,9 +99,9 @@ body{
 }
 
 .pill.ok{
-  color: rgba(45,212,191,0.95);
-  border-color: rgba(45,212,191,0.35);
-  background: rgba(45,212,191,0.06);
+  color: var(--pillText);
+  border-color: var(--pillBorder);
+  background: var(--pillBg);
 }
 
 .pill.bad{
@@ -201,14 +205,11 @@ body{
   white-space: nowrap;
   padding: 10px 12px;
   will-change: transform;
-  animation: worldX var(--worldSeconds) linear infinite;
+  animation: tickerX var(--tickerSeconds) linear infinite;
+  color: var(--pillText);
 }
 
-@keyframes worldX{
-  from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
-}
-
+/* ✅ Globe */
 .globeCard{
   padding: 0;
   overflow: hidden;
@@ -216,7 +217,7 @@ body{
 
 #globeCanvas{
   width: 100%;
-  height: 320px;
+  height: 320px; /* keep stable on iOS */
   display:block;
 }
 
@@ -253,7 +254,7 @@ body{
   color: var(--text);
 }
 
-/* ✅ News ticker (slower, and no sideways overflow) */
+/* ✅ News ticker (same speed + same color as pills) */
 .ticker{
   width: 100%;
   overflow: hidden;
@@ -272,10 +273,11 @@ body{
   white-space: nowrap;
   padding: 10px 12px;
   will-change: transform;
-  animation: marqueeX var(--marqueeSeconds) linear infinite;
+  animation: tickerX var(--tickerSeconds) linear infinite;
+  color: var(--pillText);
 }
 
-@keyframes marqueeX {
+@keyframes tickerX{
   from { transform: translateX(0); }
   to   { transform: translateX(-50%); }
 }
@@ -299,7 +301,7 @@ body{
 }
 
 .filesList a{
-  color: rgba(45,212,191,0.95);
+  color: var(--pillText);
   text-decoration: none;
 }
 .filesList a:hover{ text-decoration: underline; }
