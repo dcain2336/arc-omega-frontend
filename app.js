@@ -1,31 +1,27 @@
 // frontend/app.js
 const API_BASE = "https://arc-omega-backend.onrender.com";
 
+// Topbar
 const apiUrlText = document.getElementById("apiUrlText");
 const upstreamText = document.getElementById("upstreamText");
 const upstreamPill = document.getElementById("upstreamPill");
+
+// Terminal + chat
 const terminal = document.getElementById("terminal");
 const promptEl = document.getElementById("prompt");
 const sendBtn = document.getElementById("sendBtn");
 
+// Weather / News / Time
 const weatherText = document.getElementById("weatherText");
-
-// News marquee
-const newsInner = document.getElementById("newsInner");
-
-// Time pill (local clock)
-const timePill = document.getElementById("timePill");
-
-// World time ticker
-const worldTimeInner = document.getElementById("worldTimeInner");
+const newsTrack = document.getElementById("newsTrack");
+const timeTrack = document.getElementById("timeTrack");
 
 // Files
-const filePick = document.getElementById("filePick");
+const fileInput = document.getElementById("fileInput");
 const btnUpload = document.getElementById("btnUpload");
-const btnRefreshFiles = document.getElementById("btnRefreshFiles");
 const filesList = document.getElementById("filesList");
 
-// Drawer / overlay / blackout
+// Drawer / blackout
 const btnMenu = document.getElementById("btnMenu");
 const drawer = document.getElementById("drawer");
 const drawerOverlay = document.getElementById("drawerOverlay");
@@ -36,6 +32,7 @@ const blackout = document.getElementById("blackout");
 const btnRefreshBackend = document.getElementById("btnRefreshBackend");
 const btnRefreshWeather = document.getElementById("btnRefreshWeather");
 const btnRefreshNews = document.getElementById("btnRefreshNews");
+const btnRefreshFiles = document.getElementById("btnRefreshFiles");
 
 apiUrlText.textContent = API_BASE;
 
@@ -71,10 +68,12 @@ async function apiPost(path, body) {
 function openDrawer() {
   drawer?.classList.add("open");
   drawerOverlay?.classList.remove("hidden");
+  drawer?.setAttribute("aria-hidden", "false");
 }
 function closeDrawer() {
   drawer?.classList.remove("open");
   drawerOverlay?.classList.add("hidden");
+  drawer?.setAttribute("aria-hidden", "true");
 }
 btnMenu?.addEventListener("click", openDrawer);
 btnCloseDrawer?.addEventListener("click", closeDrawer);
@@ -88,62 +87,9 @@ btnRefreshWeather?.addEventListener("click", refreshWeather);
 btnRefreshNews?.addEventListener("click", refreshNews);
 btnRefreshFiles?.addEventListener("click", refreshFiles);
 
-/* Local clock pill */
-function pad2(n){ return String(n).padStart(2,"0"); }
-function tickTime(){
-  const d = new Date();
-  const s = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-  if (timePill) timePill.textContent = s;
-}
-tickTime();
-setInterval(tickTime, 1000);
-
-/* World time ticker */
-function fmtTZ(tz){
-  const now = new Date();
-  const fmt = new Intl.DateTimeFormat([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-    timeZone: tz
-  });
-  return fmt.format(now);
-}
-
-function buildWorldLine(){
-  const localTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const zones = [
-    ["LOCAL", localTZ],
-    ["ET", "America/New_York"],
-    ["CT", "America/Chicago"],
-    ["MT", "America/Denver"],
-    ["PT", "America/Los_Angeles"],
-    ["UTC", "UTC"],
-    ["London", "Europe/London"],
-    ["Paris", "Europe/Paris"],
-    ["Dubai", "Asia/Dubai"],
-    ["Manila", "Asia/Manila"],
-    ["Guam", "Pacific/Guam"],
-    ["Seoul", "Asia/Seoul"],
-    ["Tokyo", "Asia/Tokyo"],
-    ["Sydney", "Australia/Sydney"],
-  ];
-  const parts = zones.map(([name, tz]) => `${name} ${fmtTZ(tz)}`);
-  return parts.join("   •   ");
-}
-
-function refreshWorldTicker(){
-  if (!worldTimeInner) return;
-  const line = buildWorldLine();
-  worldTimeInner.textContent = line + "   •   " + line;
-}
-refreshWorldTicker();
-setInterval(refreshWorldTicker, 1000);
-
-/* Backend status polling */
+/* Backend status */
 let lastBackendRefresh = 0;
-async function refreshBackendStatus(force = false) {
+async function refreshBackendStatus(force=false) {
   const now = Date.now();
   if (!force && now - lastBackendRefresh < 8000) return;
   lastBackendRefresh = now;
@@ -152,10 +98,8 @@ async function refreshBackendStatus(force = false) {
     const ping = await apiGet("/ping");
     upstreamText.textContent = ping.ok ? "ok" : "down";
     upstreamPill.classList.remove("bad");
-    upstreamPill.classList.add("ok");
-  } catch (e) {
+  } catch {
     upstreamText.textContent = "down";
-    upstreamPill.classList.remove("ok");
     upstreamPill.classList.add("bad");
   }
 }
@@ -171,7 +115,7 @@ async function sendMessage() {
   log(`> ${msg}`);
 
   try {
-    const out = await apiPost("/query", { message: msg });
+    const out = await apiPost("/query", { message: msg, provider: "auto" });
     if (!out.ok) {
       log(`! error: ${out.error || "unknown"}`);
       return;
@@ -181,6 +125,7 @@ async function sendMessage() {
     log(`send error: ${e.message || String(e)}`);
   }
 }
+
 sendBtn?.addEventListener("click", sendMessage);
 promptEl?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendMessage();
@@ -219,7 +164,7 @@ async function refreshWeather() {
       weatherText.textContent = "Weather unavailable";
       return;
     }
-    const tempF = (cw.temperature * 9 / 5) + 32;
+    const tempF = (cw.temperature * 9/5) + 32;
     weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
   } catch {
     weatherText.textContent = "Weather unavailable (no location / blocked)";
@@ -228,253 +173,324 @@ async function refreshWeather() {
 refreshWeather();
 setInterval(refreshWeather, 10 * 60 * 1000);
 
-/* News (smooth, no flashing) */
-let _lastNews = "";
+/* News ticker */
 async function refreshNews() {
   try {
     const data = await apiGet("/tools/news");
     const headlines = data?.headlines || [];
-    const base = headlines.length ? (" • " + headlines.join(" • ") + " • ") : "No headlines • ";
-    const line = base + base;
-
-    if (line !== _lastNews) {
-      _lastNews = line;
-      if (newsInner) newsInner.textContent = line;
+    if (!headlines.length) {
+      newsTrack.textContent = "No headlines right now";
+      return;
     }
+    // duplicate so animation feels continuous like time ticker
+    const line = " • " + headlines.join(" • ") + " • ";
+    newsTrack.textContent = line + line;
   } catch {
-    const base = "News unavailable • ";
-    const line = base + base + base + base;
-    if (line !== _lastNews) {
-      _lastNews = line;
-      if (newsInner) newsInner.textContent = line + line;
-    }
+    newsTrack.textContent = "News unavailable";
   }
 }
 refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
-/* Files */
+/* World time ticker (real-time) */
+function buildWorldTimeLine() {
+  const zones = [
+    { name: "ET", tz: "America/New_York" },
+    { name: "CT", tz: "America/Chicago" },
+    { name: "MT", tz: "America/Denver" },
+    { name: "PT", tz: "America/Los_Angeles" },
+    { name: "UTC", tz: "UTC" },
+    { name: "London", tz: "Europe/London" },
+    { name: "Manila", tz: "Asia/Manila" },
+    { name: "Guam", tz: "Pacific/Guam" },
+    { name: "Tokyo", tz: "Asia/Tokyo" },
+  ];
+
+  const now = new Date();
+  const pieces = zones.map((z) => {
+    const fmt = new Intl.DateTimeFormat([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZone: z.tz,
+    });
+    return `${z.name} ${fmt.format(now)}`;
+  });
+
+  return pieces.join("   •   ");
+}
+
+function refreshWorldTime() {
+  const line = buildWorldTimeLine();
+  timeTrack.textContent = line + "   •   " + line;
+}
+refreshWorldTime();
+setInterval(refreshWorldTime, 1000);
+
+/* --------------------
+   Static map + day/night shading + location pin
+-------------------- */
+const mapCanvas = document.getElementById("mapCanvas");
+const mapStatus = document.getElementById("mapStatus");
+const mctx = mapCanvas?.getContext("2d");
+
+const MAP_SRC = "./assets/world-map-blue.png";
+const mapImg = new Image();
+mapImg.crossOrigin = "anonymous";
+mapImg.src = MAP_SRC;
+
+let userLat = null;
+let userLon = null;
+
+function resizeCanvasToCSS(canvas, ctx) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  const need = (canvas.width !== Math.floor(w * dpr)) || (canvas.height !== Math.floor(h * dpr));
+  if (!need) return { w, h, dpr };
+
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { w, h, dpr };
+}
+
+// Approx subsolar point (good for visuals)
+function solarSubpointUTC(d) {
+  const ms = d.getTime();
+  const jd = ms / 86400000 + 2440587.5;
+  const n = jd - 2451545.0;
+
+  const L = (280.46 + 0.9856474 * n) % 360;
+  const g = (357.528 + 0.9856003 * n) % 360;
+  const lambda = L + 1.915 * Math.sin(g * Math.PI / 180) + 0.020 * Math.sin(2 * g * Math.PI / 180);
+
+  const eps = 23.439 - 0.0000004 * n;
+  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180));
+
+  const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+  const subLon = ((180 - timeUTC * 15) % 360 + 360) % 360; // 0..360
+  const subLat = delta * 180 / Math.PI;
+
+  return { lat: subLat, lon: subLon };
+}
+
+// lon/lat -> x/y on equirect map
+function lonLatToXY(lon, lat, w, h) {
+  // map lon -180..180, lat 90..-90
+  const x = ( (lon + 180) / 360 ) * w;
+  const y = ( (90 - lat) / 180 ) * h;
+  return { x, y };
+}
+
+// Dot product on sphere to determine day/night at lon/lat
+function isNight(lon, lat, sunLon, sunLat) {
+  const toRad = (x) => x * Math.PI / 180;
+
+  const φ = toRad(lat);
+  const λ = toRad(lon);
+  const φs = toRad(sunLat);
+  const λs = toRad(sunLon);
+
+  const x = Math.cos(φ) * Math.cos(λ);
+  const y = Math.cos(φ) * Math.sin(λ);
+  const z = Math.sin(φ);
+
+  const xs = Math.cos(φs) * Math.cos(λs);
+  const ys = Math.cos(φs) * Math.sin(λs);
+  const zs = Math.sin(φs);
+
+  const dot = x*xs + y*ys + z*zs;
+  return dot < 0;
+}
+
+function drawMapFrame() {
+  if (!mapCanvas || !mctx) return;
+
+  const { w, h } = resizeCanvasToCSS(mapCanvas, mctx);
+  mctx.clearRect(0, 0, w, h);
+
+  // Background
+  mctx.fillStyle = "rgba(0,0,0,0.20)";
+  mctx.fillRect(0, 0, w, h);
+
+  // Draw image scaled to fill width while keeping aspect
+  if (mapImg.complete && mapImg.naturalWidth > 0) {
+    const imgW = mapImg.naturalWidth;
+    const imgH = mapImg.naturalHeight;
+
+    // cover-ish to fit canvas (no stretching)
+    const scale = Math.max(w / imgW, h / imgH);
+    const dw = imgW * scale;
+    const dh = imgH * scale;
+    const dx = (w - dw) / 2;
+    const dy = (h - dh) / 2;
+
+    mctx.drawImage(mapImg, dx, dy, dw, dh);
+
+    // We'll do shading in the same coordinate space as canvas,
+    // but compute lon/lat based on *canvas* dimensions.
+  } else {
+    // fallback grid if image not loaded
+    mctx.strokeStyle = "rgba(45,212,191,0.35)";
+    mctx.strokeRect(0.5, 0.5, w-1, h-1);
+    mctx.fillStyle = "rgba(45,212,191,0.20)";
+    mctx.font = "12px ui-monospace";
+    mctx.fillText("Loading map texture…", 12, 18);
+  }
+
+  // Day/Night shading overlay
+  const now = new Date();
+  const sun = solarSubpointUTC(now);
+  // convert sun lon from 0..360 to -180..180
+  let sunLon = sun.lon > 180 ? sun.lon - 360 : sun.lon;
+
+  // clip to canvas
+  mctx.save();
+  mctx.globalCompositeOperation = "source-over";
+  mctx.fillStyle = "rgba(0,0,0,0.35)";
+
+  // faster shading: sample every N pixels, fill blocks
+  const step = Math.max(2, Math.floor(Math.min(w, h) / 120)); // adaptive
+  for (let y = 0; y < h; y += step) {
+    const lat = 90 - (y / h) * 180;
+    for (let x = 0; x < w; x += step) {
+      const lon = (x / w) * 360 - 180;
+      if (isNight(lon, lat, sunLon, sun.lat)) {
+        mctx.fillRect(x, y, step, step);
+      }
+    }
+  }
+  mctx.restore();
+
+  // Location pin
+  if (userLat != null && userLon != null) {
+    const p = lonLatToXY(userLon, userLat, w, h);
+
+    mctx.beginPath();
+    mctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    mctx.fillStyle = "rgba(251,113,133,0.95)";
+    mctx.fill();
+
+    mctx.beginPath();
+    mctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+    mctx.strokeStyle = "rgba(251,113,133,0.35)";
+    mctx.lineWidth = 2;
+    mctx.stroke();
+  }
+
+  // Border glow
+  mctx.strokeStyle = "rgba(45,212,191,0.55)";
+  mctx.lineWidth = 2;
+  mctx.strokeRect(1, 1, w-2, h-2);
+}
+
+let mapAnim = null;
+function startMapLoop() {
+  if (!mapCanvas || !mctx) {
+    mapStatus.textContent = "Map unavailable (canvas missing)";
+    return;
+  }
+  function loop() {
+    drawMapFrame();
+    mapAnim = requestAnimationFrame(loop);
+  }
+  if (mapAnim) cancelAnimationFrame(mapAnim);
+  mapAnim = requestAnimationFrame(loop);
+}
+
+window.addEventListener("resize", () => {
+  // iOS size can lag
+  setTimeout(() => drawMapFrame(), 50);
+  setTimeout(() => drawMapFrame(), 250);
+});
+
+(async () => {
+  // user location best-effort
+  const pos = await getPosition();
+  if (pos) {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    mapStatus.textContent = "Map running (location pinned)";
+  } else {
+    mapStatus.textContent = "Map running (location blocked)";
+  }
+
+  // wait for map texture
+  mapImg.onload = () => {
+    mapStatus.textContent = (userLat != null) ? "Map running (location pinned)" : "Map running";
+    startMapLoop();
+  };
+  mapImg.onerror = () => {
+    mapStatus.textContent = "Map running (texture failed to load)";
+    startMapLoop();
+  };
+
+  // start even if image takes time
+  setTimeout(() => startMapLoop(), 200);
+})();
+
+/* --------------------
+   Files (expects backend endpoints)
+   GET  /files       -> { files: [{id,name,size,ts}] }
+   GET  /files/{id}  -> download
+   POST /files       -> multipart upload (field "file")
+-------------------- */
+
 async function refreshFiles() {
   try {
     const data = await apiGet("/files");
-    if (!data.ok) {
-      filesList.textContent = `Files unavailable: ${data.error || "unknown"}`;
-      return;
-    }
-    const items = data.files || [];
+    const items = data?.files || [];
     if (!items.length) {
       filesList.textContent = "No files yet";
       return;
     }
-    filesList.innerHTML = items.map(f => {
-      const id = encodeURIComponent(f.id);
-      const name = (f.name || "file").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-      return `• <a href="${API_BASE}/files/${id}" target="_blank" rel="noopener">${name}</a> (${f.size} bytes)`;
-    }).join("<br/>");
+
+    // build simple list with download links
+    const lines = items.map(f => {
+      const name = f.name || f.filename || f.id || "file";
+      const size = (f.size != null) ? ` (${Math.round(f.size/1024)} KB)` : "";
+      const id = f.id || f._id || name;
+      return `⬇ ${name}${size}  →  ${API_BASE}/files/${encodeURIComponent(id)}`;
+    });
+
+    filesList.textContent = lines.join("\n");
   } catch {
-    filesList.textContent = "File list unavailable";
+    filesList.textContent = "Files unavailable";
   }
 }
 
-async function uploadFile() {
-  const file = filePick?.files?.[0];
-  if (!file) return;
+btnUpload?.addEventListener("click", async () => {
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    log("! choose a file first");
+    return;
+  }
 
   try {
-    const form = new FormData();
-    form.append("file", file);
+    const fd = new FormData();
+    fd.append("file", file);
 
-    const r = await fetch(`${API_BASE}/files/upload`, {
+    const r = await fetch(`${API_BASE}/files`, {
       method: "POST",
-      body: form,
+      body: fd,
       cache: "no-store",
     });
 
     const txt = await r.text();
-    let data;
-    try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
-    if (!r.ok || !data.ok) throw new Error(data.error || txt);
-
-    log(`uploaded: ${data.name} (${data.size} bytes)`);
-    await refreshFiles();
-  } catch (e) {
-    log(`upload error: ${e.message || String(e)}`);
-  }
-}
-btnUpload?.addEventListener("click", uploadFile);
-refreshFiles();
-
-/* ✅ Globe (hardened for iOS) */
-const canvas = document.getElementById("globeCanvas");
-const statusEl = document.getElementById("globeStatus");
-const ctx = canvas?.getContext("2d");
-
-let dpr = window.devicePixelRatio || 1;
-let cw = 0, ch = 0;
-let globeAnim = null;
-let mapReady = false;
-
-function resizeCanvas(){
-  if (!canvas || !ctx) return;
-  const rect = canvas.getBoundingClientRect();
-  const w = Math.max(1, Math.floor(rect.width));
-  const h = Math.max(1, Math.floor(rect.height));
-
-  // iOS sometimes returns 0 during layout shifts
-  if (w < 10 || h < 10) return;
-
-  cw = w; ch = h;
-  canvas.width = Math.floor(cw * dpr);
-  canvas.height = Math.floor(ch * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-
-const ro = (canvas && "ResizeObserver" in window)
-  ? new ResizeObserver(() => {
-      resizeCanvas();
-      // restart to recover from iOS reflow/bfcache
-      startGlobe();
-    })
-  : null;
-
-if (ro && canvas) ro.observe(canvas);
-
-window.addEventListener("orientationchange", () => {
-  setTimeout(() => { resizeCanvas(); startGlobe(); }, 250);
-});
-window.addEventListener("pageshow", () => { // bfcache restore
-  setTimeout(() => { resizeCanvas(); startGlobe(); }, 120);
-});
-
-function solarSubpointUTC(d) {
-  const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
-  const subLon = (180 - timeUTC * 15) % 360;
-  return { lon: subLon };
-}
-
-const mapImg = new Image();
-mapImg.crossOrigin = "anonymous";
-mapImg.src = "./assets/world-map-blue.png";
-mapImg.onload = () => { mapReady = true; };
-mapImg.onerror = () => { mapReady = false; };
-
-function drawTexturedGlobe(t){
-  if (!canvas || !ctx) return;
-  if (cw < 10 || ch < 10) { resizeCanvas(); return; }
-  if (cw < 10 || ch < 10) return;
-
-  const cx = cw/2, cy = ch/2;
-  const r = Math.min(cw, ch) * 0.36;
-
-  ctx.clearRect(0,0,cw,ch);
-
-  // glow
-  const glow = ctx.createRadialGradient(cx, cy, r*0.2, cx, cy, r*1.25);
-  glow.addColorStop(0, "rgba(45,212,191,0.18)");
-  glow.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(0,0,cw,ch);
-
-  // clip circle
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI*2);
-  ctx.clip();
-
-  // base curvature
-  const base = ctx.createRadialGradient(cx - r*0.25, cy - r*0.25, r*0.2, cx, cy, r);
-  base.addColorStop(0, "rgba(255,255,255,0.12)");
-  base.addColorStop(1, "rgba(0,0,0,0.30)");
-  ctx.fillStyle = base;
-  ctx.fillRect(cx-r, cy-r, r*2, r*2);
-
-  // map wrap draw
-  if (mapReady && mapImg.width > 0) {
-    const rotPx = (t * 35) % mapImg.width;
-    const drawW = r*2;
-    const drawH = r*2;
-
-    const sx = Math.floor(rotPx);
-    const sw = Math.min(mapImg.width - sx, mapImg.width);
-
-    ctx.drawImage(mapImg, sx, 0, sw, mapImg.height, cx - r, cy - r, drawW * (sw / mapImg.width), drawH);
-
-    if (sw < mapImg.width) {
-      const rem = mapImg.width - sw;
-      ctx.drawImage(mapImg, 0, 0, rem, mapImg.height,
-        cx - r + drawW * (sw / mapImg.width), cy - r, drawW * (rem / mapImg.width), drawH);
+    if (!r.ok) {
+      log(`upload error: ${r.status} ${txt}`);
+      return;
     }
 
-    // vignette edges
-    const vign = ctx.createRadialGradient(cx, cy, r*0.55, cx, cy, r);
-    vign.addColorStop(0, "rgba(0,0,0,0)");
-    vign.addColorStop(1, "rgba(0,0,0,0.40)");
-    ctx.fillStyle = vign;
-    ctx.fillRect(cx-r, cy-r, r*2, r*2);
-  }
-
-  // day/night gradient overlay
-  const now = new Date();
-  const sun = solarSubpointUTC(now);
-  const rotDeg = (t * 6) % 360;
-  const rel = ((sun.lon - rotDeg) + 360) % 360;
-  const angle = (rel * Math.PI) / 180;
-
-  const gx = Math.cos(angle), gy = Math.sin(angle);
-  const x1 = cx - gx * r, y1 = cy - gy * r;
-  const x2 = cx + gx * r, y2 = cy + gy * r;
-
-  const g = ctx.createLinearGradient(x1, y1, x2, y2);
-  g.addColorStop(0.00, "rgba(0,0,0,0.45)");
-  g.addColorStop(0.45, "rgba(0,0,0,0.22)");
-  g.addColorStop(0.52, "rgba(0,0,0,0.06)");
-  g.addColorStop(1.00, "rgba(0,0,0,0.00)");
-  ctx.fillStyle = g;
-  ctx.fillRect(cx-r, cy-r, r*2, r*2);
-
-  ctx.restore();
-
-  // outline
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI*2);
-  ctx.strokeStyle = "rgba(45,212,191,0.55)";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-}
-
-function startGlobe(){
-  if (!canvas || !ctx) {
-    if (statusEl) statusEl.textContent = "Globe unavailable";
-    return;
-  }
-
-  resizeCanvas();
-  if (cw < 10 || ch < 10) {
-    // try again after layout settles
-    setTimeout(() => { resizeCanvas(); startGlobe(); }, 180);
-    return;
-  }
-
-  if (statusEl) statusEl.textContent = "Globe running";
-
-  const start = performance.now();
-  function loop(now){
-    const t = (now - start) / 1000;
-    drawTexturedGlobe(t);
-    globeAnim = requestAnimationFrame(loop);
-  }
-
-  if (globeAnim) cancelAnimationFrame(globeAnim);
-  globeAnim = requestAnimationFrame(loop);
-}
-
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    if (globeAnim) cancelAnimationFrame(globeAnim);
-    globeAnim = null;
-  } else {
-    startGlobe();
+    log(`uploaded: ${file.name}`);
+    await refreshFiles();
+  } catch (e) {
+    log(`upload error: ${String(e)}`);
   }
 });
 
-setTimeout(() => startGlobe(), 180);
+refreshFiles();
+setInterval(refreshFiles, 10 * 60 * 1000);
