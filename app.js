@@ -1,6 +1,4 @@
 // frontend/app.js
-
-// ✅ SET THIS ONCE
 const API_BASE = "https://arc-omega-backend.onrender.com";
 
 const apiUrlText = document.getElementById("apiUrlText");
@@ -15,8 +13,11 @@ const weatherText = document.getElementById("weatherText");
 // News marquee
 const newsInner = document.getElementById("newsInner");
 
-// Time ticker
+// Time pill (local clock)
 const timePill = document.getElementById("timePill");
+
+// World time ticker
+const worldTimeInner = document.getElementById("worldTimeInner");
 
 // Files
 const filePick = document.getElementById("filePick");
@@ -66,9 +67,7 @@ async function apiPost(path, body) {
   return data;
 }
 
-/* --------------------
-   Drawer + blackout UI
--------------------- */
+/* Drawer + blackout */
 function openDrawer() {
   drawer?.classList.add("open");
   drawerOverlay?.classList.remove("hidden");
@@ -89,9 +88,7 @@ btnRefreshWeather?.addEventListener("click", refreshWeather);
 btnRefreshNews?.addEventListener("click", refreshNews);
 btnRefreshFiles?.addEventListener("click", refreshFiles);
 
-/* --------------------
-   Local time ticker
--------------------- */
+/* Local clock pill */
 function pad2(n){ return String(n).padStart(2,"0"); }
 function tickTime(){
   const d = new Date();
@@ -99,13 +96,55 @@ function tickTime(){
   if (timePill) timePill.textContent = s;
 }
 tickTime();
-setInterval(tickTime, 250);
+setInterval(tickTime, 1000);
 
-/* --------------------
-   Backend status polling (throttled)
--------------------- */
+/* ✅ World time ticker (scrolling) */
+function fmtTZ(tz){
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: tz
+  });
+  return fmt.format(now);
+}
+
+function buildWorldLine(){
+  const localTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const zones = [
+    ["LOCAL", localTZ],
+    ["ET", "America/New_York"],
+    ["CT", "America/Chicago"],
+    ["MT", "America/Denver"],
+    ["PT", "America/Los_Angeles"],
+    ["UTC", "UTC"],
+    ["London", "Europe/London"],
+    ["Paris", "Europe/Paris"],
+    ["Dubai", "Asia/Dubai"],
+    ["Manila", "Asia/Manila"],
+    ["Guam", "Pacific/Guam"],
+    ["Seoul", "Asia/Seoul"],
+    ["Tokyo", "Asia/Tokyo"],
+    ["Sydney", "Australia/Sydney"],
+  ];
+
+  const parts = zones.map(([name, tz]) => `${name} ${fmtTZ(tz)}`);
+  return parts.join("   •   ");
+}
+
+function refreshWorldTicker(){
+  if (!worldTimeInner) return;
+  const line = buildWorldLine();
+  // duplicate for smooth -50% translate
+  worldTimeInner.textContent = line + "   •   " + line;
+}
+refreshWorldTicker();
+setInterval(refreshWorldTicker, 1000);
+
+/* Backend status polling */
 let lastBackendRefresh = 0;
-
 async function refreshBackendStatus(force = false) {
   const now = Date.now();
   if (!force && now - lastBackendRefresh < 8000) return;
@@ -122,13 +161,10 @@ async function refreshBackendStatus(force = false) {
     upstreamPill.classList.add("bad");
   }
 }
-
 refreshBackendStatus();
 setInterval(refreshBackendStatus, 12000);
 
-/* --------------------
-   Send message
--------------------- */
+/* Send message */
 async function sendMessage() {
   const msg = (promptEl.value || "").trim();
   if (!msg) return;
@@ -147,15 +183,12 @@ async function sendMessage() {
     log(`send error: ${e.message || String(e)}`);
   }
 }
-
 sendBtn?.addEventListener("click", sendMessage);
 promptEl?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendMessage();
 });
 
-/* --------------------
-   Browser geolocation helper
--------------------- */
+/* Geolocation helper */
 function getPosition() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
@@ -167,9 +200,7 @@ function getPosition() {
   });
 }
 
-/* --------------------
-   Weather (Open-Meteo) using browser geolocation
--------------------- */
+/* Weather */
 async function refreshWeather() {
   try {
     const pos = await getPosition();
@@ -177,7 +208,6 @@ async function refreshWeather() {
       weatherText.textContent = "Weather unavailable (no location / blocked)";
       return;
     }
-
     const lat = pos.coords.latitude;
     const lon = pos.coords.longitude;
 
@@ -187,59 +217,45 @@ async function refreshWeather() {
     );
     const data = await r.json();
     const cw = data.current_weather;
-
     if (!cw) {
       weatherText.textContent = "Weather unavailable";
       return;
     }
-
     const tempF = (cw.temperature * 9 / 5) + 32;
     weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
-  } catch (e) {
+  } catch {
     weatherText.textContent = "Weather unavailable (no location / blocked)";
   }
 }
-
 refreshWeather();
 setInterval(refreshWeather, 10 * 60 * 1000);
 
-/* --------------------
-   News ticker (smooth scrolling, no flashing)
--------------------- */
-let _lastNewsLine = "";
-
+/* News (no flashing; only update if changed) */
+let _lastNews = "";
 async function refreshNews() {
   try {
     const data = await apiGet("/tools/news");
     const headlines = data?.headlines || [];
+    const base = headlines.length ? (" • " + headlines.join(" • ") + " • ") : "No headlines • ";
+    const line = base + base; // duplicate for smooth loop
 
-    const base = headlines.length
-      ? " • " + headlines.join(" • ") + " • "
-      : "No headlines right now • ";
-
-    // duplicate for clean -50% translate
-    const line = base + base;
-
-    if (line !== _lastNewsLine) {
-      _lastNewsLine = line;
+    if (line !== _lastNews) {
+      _lastNews = line;
       if (newsInner) newsInner.textContent = line;
     }
-  } catch (e) {
+  } catch {
     const base = "News unavailable • ";
     const line = base + base + base + base;
-    if (line !== _lastNewsLine) {
-      _lastNewsLine = line;
+    if (line !== _lastNews) {
+      _lastNews = line;
       if (newsInner) newsInner.textContent = line + line;
     }
   }
 }
-
 refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
-/* --------------------
-   Files (Mongo GridFS via backend)
--------------------- */
+/* Files */
 async function refreshFiles() {
   try {
     const data = await apiGet("/files");
@@ -247,19 +263,17 @@ async function refreshFiles() {
       filesList.textContent = `Files unavailable: ${data.error || "unknown"}`;
       return;
     }
-
     const items = data.files || [];
     if (!items.length) {
       filesList.textContent = "No files yet";
       return;
     }
-
     filesList.innerHTML = items.map(f => {
       const id = encodeURIComponent(f.id);
       const name = (f.name || "file").replace(/</g,"&lt;").replace(/>/g,"&gt;");
       return `• <a href="${API_BASE}/files/${id}" target="_blank" rel="noopener">${name}</a> (${f.size} bytes)`;
     }).join("<br/>");
-  } catch (e) {
+  } catch {
     filesList.textContent = "File list unavailable";
   }
 }
@@ -289,289 +303,155 @@ async function uploadFile() {
     log(`upload error: ${e.message || String(e)}`);
   }
 }
-
 btnUpload?.addEventListener("click", uploadFile);
 refreshFiles();
 
-/* --------------------
-   Globe with texture + terminator
--------------------- */
+/* ✅ Globe (fast, textured, no per-pixel loops) */
 const canvas = document.getElementById("globeCanvas");
 const statusEl = document.getElementById("globeStatus");
 const ctx = canvas?.getContext("2d");
 
-let animId = null;
-let lastLayoutW = 0;
-let lastLayoutH = 0;
+let dpr = window.devicePixelRatio || 1;
+let cw = 0, ch = 0;
 
-let userLat = null;
-let userLon = null;
-
-// Texture
-const tex = new Image();
-tex.crossOrigin = "anonymous";
-tex.src = "./assets/world-map-blue.png";
-let texReady = false;
-let texData = null;
-
-tex.onload = () => {
-  texReady = true;
-  // cache pixel data for fast sampling
-  const oc = document.createElement("canvas");
-  oc.width = tex.width;
-  oc.height = tex.height;
-  const octx = oc.getContext("2d");
-  octx.drawImage(tex, 0, 0);
-  texData = octx.getImageData(0, 0, tex.width, tex.height).data;
-};
-
-function setCanvasSize() {
+function resizeCanvas(){
   if (!canvas || !ctx) return;
-
   const rect = canvas.getBoundingClientRect();
-  const w = Math.max(1, Math.floor(rect.width));
-  const h = Math.max(1, Math.floor(rect.height));
-  const dpr = window.devicePixelRatio || 1;
-
-  if (w === lastLayoutW && h === lastLayoutH && canvas.width > 0) return;
-
-  lastLayoutW = w;
-  lastLayoutH = h;
-
-  canvas.width = Math.floor(w * dpr);
-  canvas.height = Math.floor(h * dpr);
-
+  cw = Math.max(1, Math.floor(rect.width));
+  ch = Math.max(1, Math.floor(rect.height));
+  canvas.width = Math.floor(cw * dpr);
+  canvas.height = Math.floor(ch * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
+window.addEventListener("resize", () => setTimeout(resizeCanvas, 100));
+resizeCanvas();
 
-function lonLatToSphereXYZ(lonDeg, latDeg, rotDeg) {
-  const lon = (lonDeg - rotDeg) * Math.PI / 180;
-  const lat = latDeg * Math.PI / 180;
+// Texture image (your repo already has it)
+const mapImg = new Image();
+mapImg.crossOrigin = "anonymous";
+mapImg.src = "./assets/world-map-blue.png";
 
-  const x = Math.cos(lat) * Math.sin(lon);
-  const y = Math.sin(lat);
-  const z = Math.cos(lat) * Math.cos(lon);
-
-  return { x, y, z };
-}
+let mapReady = false;
+mapImg.onload = () => { mapReady = true; };
 
 function solarSubpointUTC(d) {
-  const ms = d.getTime();
-  const jd = ms / 86400000 + 2440587.5;
-  const n = jd - 2451545.0;
-
-  const L = (280.46 + 0.9856474 * n) % 360;
-  const g = (357.528 + 0.9856003 * n) % 360;
-  const lambda = L + 1.915 * Math.sin(g * Math.PI / 180) + 0.020 * Math.sin(2 * g * Math.PI / 180);
-
-  const eps = 23.439 - 0.0000004 * n;
-  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180));
-
   const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
   const subLon = (180 - timeUTC * 15) % 360;
-  const subLat = delta * 180 / Math.PI;
-
-  return { lat: subLat, lon: subLon };
+  return { lon: subLon };
 }
 
-// Sample the texture by lon/lat -> pixel
-function sampleTexRGBA(lonDeg, latDeg){
-  if (!texReady || !texData) return [0,0,0,0];
+let globeAnim = null;
 
-  // equirectangular map: lon -180..180 => x 0..W
-  // lat 90..-90 => y 0..H
-  const W = tex.width;
-  const H = tex.height;
-
-  let x = ( (lonDeg + 180) / 360 ) * (W - 1);
-  let y = ( (90 - latDeg) / 180 ) * (H - 1);
-
-  x = Math.max(0, Math.min(W - 1, x));
-  y = Math.max(0, Math.min(H - 1, y));
-
-  const ix = (x|0);
-  const iy = (y|0);
-  const idx = (iy * W + ix) * 4;
-
-  return [
-    texData[idx],
-    texData[idx+1],
-    texData[idx+2],
-    texData[idx+3]
-  ];
-}
-
-function drawGlobe(t) {
+function drawTexturedGlobe(t){
   if (!canvas || !ctx) return;
+  if (!cw || !ch) resizeCanvas();
 
-  setCanvasSize();
+  const cx = cw/2, cy = ch/2;
+  const r = Math.min(cw, ch) * 0.36;
 
-  const w = lastLayoutW || canvas.getBoundingClientRect().width;
-  const h = lastLayoutH || canvas.getBoundingClientRect().height;
-
-  ctx.clearRect(0, 0, w, h);
-
-  const cx = w / 2;
-  const cy = h / 2;
-  const r = Math.min(w, h) * 0.36;
+  ctx.clearRect(0,0,cw,ch);
 
   // background glow
-  const grad = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r * 1.2);
-  grad.addColorStop(0, "rgba(45,212,191,0.18)");
-  grad.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, w, h);
+  const glow = ctx.createRadialGradient(cx, cy, r*0.2, cx, cy, r*1.25);
+  glow.addColorStop(0, "rgba(45,212,191,0.18)");
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0,0,cw,ch);
 
-  // sphere outline
+  // clip sphere
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.clip();
+
+  // base shading for curvature
+  const base = ctx.createRadialGradient(cx - r*0.25, cy - r*0.25, r*0.2, cx, cy, r);
+  base.addColorStop(0, "rgba(255,255,255,0.12)");
+  base.addColorStop(1, "rgba(0,0,0,0.30)");
+  ctx.fillStyle = base;
+  ctx.fillRect(cx-r, cy-r, r*2, r*2);
+
+  // draw rotating map (fast hack: slide equirect map behind circle, wrap by drawing twice)
+  if (mapReady) {
+    const rotPx = (t * 35) % mapImg.width; // speed
+    const drawW = r*2;
+    const drawH = r*2;
+
+    // scale image to sphere size
+    // we slide it by changing source x (crop)
+    const sx = Math.floor(rotPx);
+    const sw = Math.min(mapImg.width - sx, mapImg.width);
+
+    // first segment
+    ctx.drawImage(mapImg, sx, 0, sw, mapImg.height, cx - r, cy - r, drawW * (sw / mapImg.width), drawH);
+
+    // wrap segment if needed
+    if (sw < mapImg.width) {
+      const rem = mapImg.width - sw;
+      ctx.drawImage(mapImg, 0, 0, rem, mapImg.height, cx - r + drawW * (sw / mapImg.width), cy - r, drawW * (rem / mapImg.width), drawH);
+    }
+
+    // darken edges for “roundness”
+    const vign = ctx.createRadialGradient(cx, cy, r*0.55, cx, cy, r);
+    vign.addColorStop(0, "rgba(0,0,0,0)");
+    vign.addColorStop(1, "rgba(0,0,0,0.38)");
+    ctx.fillStyle = vign;
+    ctx.fillRect(cx-r, cy-r, r*2, r*2);
+  }
+
+  // day/night overlay (simple rotated gradient)
+  const sun = solarSubpointUTC(new Date());
+  const rotDeg = (t * 6) % 360; // visual rotation degrees
+  const rel = ((sun.lon - rotDeg) + 360) % 360;
+
+  // gradient direction: shift based on rel
+  const angle = (rel * Math.PI) / 180;
+  const gx = Math.cos(angle), gy = Math.sin(angle);
+
+  const x1 = cx - gx * r, y1 = cy - gy * r;
+  const x2 = cx + gx * r, y2 = cy + gy * r;
+  const g = ctx.createLinearGradient(x1, y1, x2, y2);
+  g.addColorStop(0.00, "rgba(0,0,0,0.45)");
+  g.addColorStop(0.45, "rgba(0,0,0,0.20)");
+  g.addColorStop(0.52, "rgba(0,0,0,0.05)");
+  g.addColorStop(1.00, "rgba(0,0,0,0.00)");
+  ctx.fillStyle = g;
+  ctx.fillRect(cx-r, cy-r, r*2, r*2);
+
+  ctx.restore();
+
+  // outline
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.strokeStyle = "rgba(45,212,191,0.55)";
   ctx.lineWidth = 2;
   ctx.stroke();
-
-  // rotation
-  const rotDeg = (t * 6) % 360;
-
-  // Clip to sphere
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.clip();
-
-  // Draw texture by sampling visible hemisphere
-  // step controls quality/speed (2 is good on mobile)
-  const step = 2;
-
-  if (texReady && texData) {
-    for (let py = -r; py <= r; py += step) {
-      for (let px = -r; px <= r; px += step) {
-        const nx = px / r;
-        const ny = -py / r;
-        const rr = nx*nx + ny*ny;
-        if (rr > 1) continue;
-
-        // orthographic inverse: z = sqrt(1-x^2-y^2)
-        const nz = Math.sqrt(1 - rr);
-
-        // convert xyz back to lon/lat (in rotated space)
-        // We built xyz such that z is "toward viewer". Inverse rotation:
-        // lon' = atan2(x, z), lat = asin(y)
-        const lonPrime = Math.atan2(nx, nz) * 180/Math.PI;
-        const lat = Math.asin(ny) * 180/Math.PI;
-
-        // Apply globe rotation: lon = lon' + rotDeg
-        let lon = lonPrime + rotDeg;
-        if (lon > 180) lon -= 360;
-        if (lon < -180) lon += 360;
-
-        const [R,G,B,A] = sampleTexRGBA(lon, lat);
-        if (A === 0) continue;
-
-        ctx.fillStyle = `rgba(${R},${G},${B},${(A/255)})`;
-        ctx.fillRect(cx + px, cy + py, step, step);
-      }
-    }
-  } else {
-    // fallback sphere fill if texture isn't ready
-    ctx.fillStyle = "rgba(255,255,255,0.06)";
-    ctx.fillRect(cx - r, cy - r, r*2, r*2);
-  }
-
-  // Day/Night shading
-  const now = new Date();
-  const sun = solarSubpointUTC(now);
-  const sunP = lonLatToSphereXYZ(sun.lon, sun.lat, rotDeg);
-  const sunDir = { x: sunP.x, y: sunP.y, z: sunP.z };
-
-  ctx.fillStyle = "rgba(0,0,0,0.34)";
-  for (let py = -r; py <= r; py += 3) {
-    for (let px = -r; px <= r; px += 3) {
-      const nx = px / r;
-      const ny = -py / r;
-      const rr = nx*nx + ny*ny;
-      if (rr > 1) continue;
-      const nz = Math.sqrt(1 - rr);
-
-      // dot(view_xyz, sunDir) < 0 => night
-      const dot = nx*sunDir.x + ny*sunDir.y + nz*sunDir.z;
-      if (dot >= 0) continue;
-
-      ctx.fillRect(cx + px, cy + py, 3, 3);
-    }
-  }
-
-  // user pin
-  if (userLat != null && userLon != null) {
-    const u = lonLatToSphereXYZ(userLon, userLat, rotDeg);
-    if (u.z > 0) {
-      const ux = cx + u.x * r;
-      const uy = cy - u.y * r;
-
-      ctx.beginPath();
-      ctx.arc(ux, uy, 4, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(251,113,133,0.95)";
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(ux, uy, 10, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(251,113,133,0.35)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-  }
-
-  ctx.restore();
 }
 
-function startGlobe() {
+function startGlobe(){
   if (!canvas || !ctx) {
-    if (statusEl) statusEl.textContent = "Globe unavailable (canvas missing)";
+    if (statusEl) statusEl.textContent = "Globe unavailable";
     return;
   }
-
   if (statusEl) statusEl.textContent = "Globe running";
-  let start = performance.now();
 
-  function loop(now) {
+  const start = performance.now();
+  function loop(now){
     const t = (now - start) / 1000;
-    drawGlobe(t);
-    animId = requestAnimationFrame(loop);
+    drawTexturedGlobe(t);
+    globeAnim = requestAnimationFrame(loop);
   }
-
-  if (animId) cancelAnimationFrame(animId);
-  animId = requestAnimationFrame(loop);
+  if (globeAnim) cancelAnimationFrame(globeAnim);
+  globeAnim = requestAnimationFrame(loop);
 }
 
-window.addEventListener("resize", () => {
-  setCanvasSize();
-  setTimeout(setCanvasSize, 250);
-});
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
-    if (animId) cancelAnimationFrame(animId);
-    animId = null;
+    if (globeAnim) cancelAnimationFrame(globeAnim);
+    globeAnim = null;
   } else {
     startGlobe();
   }
 });
 
-// Get user location once (best-effort)
-(async () => {
-  const pos = await getPosition();
-  if (pos) {
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
-    if (statusEl) statusEl.textContent = "Globe running (location pinned)";
-  } else {
-    if (statusEl) statusEl.textContent = "Globe running (location blocked)";
-  }
-  setTimeout(() => {
-    setCanvasSize();
-    startGlobe();
-  }, 120);
-})();
-
-setTimeout(() => {
-  setCanvasSize();
-  startGlobe();
-}, 200);
+setTimeout(() => { resizeCanvas(); startGlobe(); }, 150);
