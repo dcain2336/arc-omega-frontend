@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ARC OMEGA</title>
 
-  <!-- ✅ RELATIVE path so Cloudflare Pages always finds it -->
+  <!-- ✅ keep your existing filename -->
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -46,8 +46,10 @@
         </span>
       </div>
 
-      <!-- ✅ Time ticker restored -->
-      <div id="timeTicker" class="subtle mono">Local time: —</div>
+      <!-- ✅ time ticker lives here -->
+      <div class="timeTicker">
+        <div id="timeTrack" class="timeTrack mono">Loading time…</div>
+      </div>
     </div>
   </header>
 
@@ -87,7 +89,6 @@
 
   </main>
 
-  <!-- ✅ RELATIVE path so Cloudflare Pages always finds it -->
   <script src="./app.js"></script>
 </body>
 </html>
