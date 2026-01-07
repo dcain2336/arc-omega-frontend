@@ -6,13 +6,13 @@
   <title>ARC OMEGA</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
-<body>
 
+<body>
   <!-- Drawer -->
-  <div id="drawer" class="drawer">
+  <aside id="drawer" class="drawer" aria-hidden="true">
     <div class="drawerHeader">
       <div class="drawerTitle">ARC OMEGA</div>
-      <button id="btnCloseDrawer" class="iconBtn">✕</button>
+      <button id="btnCloseDrawer" class="iconBtn" aria-label="Close menu">✕</button>
     </div>
 
     <div class="drawerBody">
@@ -22,16 +22,18 @@
       <button id="btnRefreshFiles" class="btn">Refresh files</button>
       <button id="btnBlackout" class="btn danger">Blackout</button>
     </div>
-  </div>
+  </aside>
 
   <div id="drawerOverlay" class="overlay hidden"></div>
 
   <!-- Blackout -->
-  <div id="blackout" class="blackout hidden"></div>
+  <div id="blackout" class="blackout hidden" aria-hidden="true">
+    <div class="blackoutHint">BLACKOUT — tap anywhere to exit</div>
+  </div>
 
   <!-- Top bar -->
   <header class="topbar">
-    <button id="btnMenu" class="iconBtn">☰</button>
+    <button id="btnMenu" class="iconBtn" aria-label="Open menu">☰</button>
 
     <div class="topbarMid">
       <div class="apiLine">
@@ -40,64 +42,60 @@
       <div class="statusLine">
         Upstream:
         <span id="upstreamPill" class="pill ok">
-          <span id="upstreamText">ok</span>
+          <span id="upstreamText">unknown</span>
         </span>
       </div>
     </div>
-
-    <div class="topbarRight">
-      <span id="timePill" class="pill ok mono">--:--:--</span>
-    </div>
   </header>
-
-  <!-- ✅ World time scrolling ticker (back) -->
-  <div class="worldTicker">
-    <div class="worldMarquee">
-      <div id="worldTimeInner" class="worldInner mono">Loading time…</div>
-    </div>
-  </div>
 
   <main class="wrap">
 
-    <section class="card globeCard">
-      <canvas id="globeCanvas"></canvas>
-      <div class="globeFooter">
-        <div id="globeStatus">Globe loading…</div>
-        <div class="hint">Day/Night overlay uses device time (no external API).</div>
+    <!-- World Time ticker -->
+    <section class="card">
+      <div class="sectionTitle">World Time</div>
+      <div class="ticker">
+        <div class="tickerTrack" id="timeTrack">Loading…</div>
       </div>
     </section>
 
+    <!-- Map with day/night shading -->
+    <section class="card mapCard">
+      <div class="sectionTitle">World Map</div>
+      <div class="mapWrap">
+        <canvas id="mapCanvas"></canvas>
+      </div>
+      <div class="subtle">Day/Night overlay uses device time (no external API).</div>
+      <div id="mapStatus" class="subtle">Map loading…</div>
+    </section>
+
     <section class="card">
-      <h2>Weather</h2>
+      <div class="sectionTitle">Weather</div>
       <div id="weatherText" class="mono">Loading…</div>
       <div class="subtle">Source: Open-Meteo (browser geolocation)</div>
     </section>
 
     <section class="card">
-      <h2>News</h2>
+      <div class="sectionTitle">News</div>
       <div class="ticker">
-        <div class="marquee">
-          <div id="newsInner" class="marqueeInner mono">Loading…</div>
-        </div>
+        <div id="newsTrack" class="tickerTrack mono">Loading…</div>
       </div>
       <div class="subtle">Source: Backend (/tools/news)</div>
     </section>
 
     <section class="card">
-      <h2>Files</h2>
+      <div class="sectionTitle">Files</div>
 
-      <div class="fileRow">
-        <input id="filePick" type="file" />
+      <div class="filesRow">
+        <input id="fileInput" type="file" class="fileInput" />
         <button id="btnUpload" class="btn">Upload</button>
       </div>
 
-      <div id="filesList" class="filesList mono">Loading…</div>
-
+      <div id="filesList" class="filesList mono">No files yet</div>
       <div class="subtle">Source: Backend (/files)</div>
     </section>
 
     <section class="card">
-      <h2>Terminal</h2>
+      <div class="sectionTitle">Terminal</div>
       <pre id="terminal" class="terminal"></pre>
 
       <div class="promptRow">
