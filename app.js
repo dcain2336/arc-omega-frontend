@@ -181,7 +181,6 @@ setInterval(refreshWeather, 10 * 60 * 1000);
 
 /* --------------------
    News ticker (backend endpoint)
-   Uses your keyed provider(s) server-side
 -------------------- */
 async function refreshNews() {
   try {
@@ -202,8 +201,43 @@ refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
 /* --------------------
-   Canvas Globe with Day/Night Terminator + Location Pin
-   (Ham-clock style vibe)
+   World map texture (land mask)
+   Put file here: /frontend/assets/world-map-blue.png
+-------------------- */
+const landImg = new Image();
+landImg.src = "/assets/world-map-blue.png";
+let landReady = false;
+
+const landCanvas = document.createElement("canvas");
+const landCtx = landCanvas.getContext("2d", { willReadFrequently: true });
+
+landImg.onload = () => {
+  landCanvas.width = landImg.width;
+  landCanvas.height = landImg.height;
+  landCtx.drawImage(landImg, 0, 0);
+  landReady = true;
+};
+
+function isLandAt(lonDeg, latDeg) {
+  if (!landReady) return false;
+
+  // lon [-180..180] -> x [0..w)
+  const x = Math.floor(((lonDeg + 180) / 360) * landCanvas.width);
+  // lat [-90..90] -> y [0..h)
+  const y = Math.floor(((90 - latDeg) / 180) * landCanvas.height);
+
+  if (x < 0 || y < 0 || x >= landCanvas.width || y >= landCanvas.height) return false;
+
+  const pixel = landCtx.getImageData(x, y, 1, 1).data;
+  const r = pixel[0], g = pixel[1], b = pixel[2];
+
+  // Blue-dominant land test (works for a “blue land / white water” style map)
+  // If your map colors differ, we’ll tweak this threshold.
+  return (b > 120 && b > r + 15 && b > g + 15);
+}
+
+/* --------------------
+   Canvas Globe with Day/Night Terminator + Location Pin + Land
 -------------------- */
 const canvas = document.getElementById("globeCanvas");
 const statusEl = document.getElementById("globeStatus");
@@ -225,7 +259,6 @@ function setCanvasSize() {
   const h = Math.max(1, Math.floor(rect.height));
   const dpr = window.devicePixelRatio || 1;
 
-  // only resize if layout changed to avoid flicker
   if (w === lastLayoutW && h === lastLayoutH && canvas.width > 0) return;
 
   lastLayoutW = w;
@@ -250,22 +283,25 @@ function lonLatToSphereXY(lonDeg, latDeg, rotDeg) {
 }
 
 function solarSubpointUTC(d) {
-  // Approximate subsolar point (lat, lon) using NOAA-style simple algorithm
-  // Good enough for terminator shading visuals.
+  // Approximate subsolar point (lat, lon) - visual grade
   const ms = d.getTime();
   const jd = ms / 86400000 + 2440587.5;
   const n = jd - 2451545.0;
 
   const L = (280.46 + 0.9856474 * n) % 360;
   const g = (357.528 + 0.9856003 * n) % 360;
-  const lambda = L + 1.915 * Math.sin(g * Math.PI / 180) + 0.020 * Math.sin(2 * g * Math.PI / 180);
+  const lambda =
+    L + 1.915 * Math.sin(g * Math.PI / 180) + 0.020 * Math.sin(2 * g * Math.PI / 180);
 
   const eps = 23.439 - 0.0000004 * n;
-  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180)); // declination
+  const delta = Math.asin(
+    Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180)
+  );
 
-  // Equation of time-ish for subsolar lon
-  const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
-  const subLon = (180 - timeUTC * 15) % 360; // rough: sun overhead at 12:00 UTC -> lon 0
+  const timeUTC =
+    d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+
+  const subLon = (180 - timeUTC * 15) % 360;
   const subLat = delta * 180 / Math.PI;
 
   return { lat: subLat, lon: subLon };
@@ -314,7 +350,6 @@ function drawGlobe(t) {
   // graticule
   ctx.lineWidth = 1;
   for (let lat = -60; lat <= 60; lat += 30) {
-    // latitude line: sample points
     ctx.beginPath();
     let started = false;
     for (let lon = -180; lon <= 180; lon += 6) {
@@ -329,7 +364,6 @@ function drawGlobe(t) {
     ctx.stroke();
   }
   for (let lon = -180; lon <= 180; lon += 30) {
-    // longitude line
     ctx.beginPath();
     let started = false;
     for (let lat = -90; lat <= 90; lat += 4) {
@@ -344,15 +378,41 @@ function drawGlobe(t) {
     ctx.stroke();
   }
 
-  // Day/Night terminator (ham-clock style overlay)
+  /* --------------------
+     Land masses layer
+  -------------------- */
+  if (landReady) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+
+    ctx.fillStyle = "rgba(56, 189, 248, 0.70)"; // land color
+
+    for (let lat = -90; lat <= 90; lat += 1.5) {
+      for (let lon = -180; lon <= 180; lon += 1.5) {
+        if (!isLandAt(lon, lat)) continue;
+
+        const p = lonLatToSphereXY(lon, lat, rotDeg);
+        if (p.z <= 0) continue;
+
+        const x = cx + p.x * r;
+        const y = cy - p.y * r;
+
+        ctx.fillRect(x, y, 1.8, 1.8);
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // Day/Night terminator overlay
   const now = new Date();
   const sun = solarSubpointUTC(now);
 
-  // We shade points where dot(p, sunDir) < 0 (night)
   const sunP = lonLatToSphereXY(sun.lon, sun.lat, rotDeg);
   const sunDir = { x: sunP.x, y: sunP.y, z: sunP.z };
 
-  // Render night overlay by scanning latitude bands (fast enough)
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -373,7 +433,7 @@ function drawGlobe(t) {
 
   ctx.restore();
 
-  // Sun marker (just for effect)
+  // Sun marker
   if (sunP.z > 0) {
     const sx = cx + sunP.x * r;
     const sy = cy - sunP.y * r;
@@ -383,7 +443,7 @@ function drawGlobe(t) {
     ctx.fill();
   }
 
-  // User pin (if available)
+  // User pin
   if (userLat != null && userLon != null) {
     const u = lonLatToSphereXY(userLon, userLat, rotDeg);
     if (u.z > 0) {
@@ -424,10 +484,10 @@ function startGlobe() {
 }
 
 window.addEventListener("resize", () => {
-  // iOS sometimes reports size late; poke resize twice
   setCanvasSize();
   setTimeout(setCanvasSize, 250);
 });
+
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     if (animId) cancelAnimationFrame(animId);
@@ -447,7 +507,6 @@ document.addEventListener("visibilitychange", () => {
   } else {
     if (statusEl) statusEl.textContent = "Globe running (location blocked)";
   }
-  // Wait for layout to settle before starting
   setTimeout(() => {
     setCanvasSize();
     startGlobe();
