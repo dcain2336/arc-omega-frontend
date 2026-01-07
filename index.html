@@ -58,12 +58,14 @@
       </div>
     </section>
 
-    <!-- Map with day/night shading -->
+    <!-- Static World Map -->
     <section class="card mapCard">
       <div class="sectionTitle">World Map</div>
+
       <div class="mapWrap">
         <canvas id="mapCanvas"></canvas>
       </div>
+
       <div class="subtle">Day/Night overlay uses device time (no external API).</div>
       <div id="mapStatus" class="subtle">Map loading…</div>
     </section>
@@ -84,12 +86,10 @@
 
     <section class="card">
       <div class="sectionTitle">Files</div>
-
       <div class="filesRow">
         <input id="fileInput" type="file" class="fileInput" />
         <button id="btnUpload" class="btn">Upload</button>
       </div>
-
       <div id="filesList" class="filesList mono">No files yet</div>
       <div class="subtle">Source: Backend (/files)</div>
     </section>
