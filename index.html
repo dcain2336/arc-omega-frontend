@@ -4,8 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ARC OMEGA</title>
-
-  <!-- ✅ keep your existing filename -->
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -21,6 +19,7 @@
       <button id="btnRefreshBackend" class="btn">Refresh backend</button>
       <button id="btnRefreshWeather" class="btn">Refresh weather</button>
       <button id="btnRefreshNews" class="btn">Refresh news</button>
+      <button id="btnRefreshFiles" class="btn">Refresh files</button>
       <button id="btnBlackout" class="btn danger">Blackout</button>
     </div>
   </div>
@@ -38,18 +37,16 @@
       <div class="apiLine">
         API: <span id="apiUrlText"></span>
       </div>
-
       <div class="statusLine">
         Upstream:
         <span id="upstreamPill" class="pill ok">
           <span id="upstreamText">ok</span>
         </span>
       </div>
+    </div>
 
-      <!-- ✅ time ticker lives here -->
-      <div class="timeTicker">
-        <div id="timeTrack" class="timeTrack mono">Loading time…</div>
-      </div>
+    <div class="topbarRight">
+      <span id="timePill" class="pill ok mono">--:--:--</span>
     </div>
   </header>
 
@@ -72,9 +69,24 @@
     <section class="card">
       <h2>News</h2>
       <div class="ticker">
-        <div id="newsTrack" class="mono">Loading…</div>
+        <div id="newsMarquee" class="marquee">
+          <div id="newsInner" class="marqueeInner mono">Loading…</div>
+        </div>
       </div>
       <div class="subtle">Source: Backend (/tools/news)</div>
+    </section>
+
+    <section class="card">
+      <h2>Files</h2>
+
+      <div class="fileRow">
+        <input id="filePick" type="file" />
+        <button id="btnUpload" class="btn">Upload</button>
+      </div>
+
+      <div id="filesList" class="filesList mono">Loading…</div>
+
+      <div class="subtle">Source: Backend (/files)</div>
     </section>
 
     <section class="card">
