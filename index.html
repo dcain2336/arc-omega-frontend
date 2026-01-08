@@ -6,34 +6,31 @@
   <title>ARC OMEGA</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
-
 <body>
+
   <!-- Drawer -->
-  <aside id="drawer" class="drawer" aria-hidden="true">
+  <div id="drawer" class="drawer">
     <div class="drawerHeader">
       <div class="drawerTitle">ARC OMEGA</div>
-      <button id="btnCloseDrawer" class="iconBtn" aria-label="Close menu">✕</button>
+      <button id="btnCloseDrawer" class="iconBtn">✕</button>
     </div>
 
     <div class="drawerBody">
       <button id="btnRefreshBackend" class="btn">Refresh backend</button>
       <button id="btnRefreshWeather" class="btn">Refresh weather</button>
       <button id="btnRefreshNews" class="btn">Refresh news</button>
-      <button id="btnRefreshFiles" class="btn">Refresh files</button>
       <button id="btnBlackout" class="btn danger">Blackout</button>
     </div>
-  </aside>
+  </div>
 
   <div id="drawerOverlay" class="overlay hidden"></div>
 
   <!-- Blackout -->
-  <div id="blackout" class="blackout hidden" aria-hidden="true">
-    <div class="blackoutHint">BLACKOUT — tap anywhere to exit</div>
-  </div>
+  <div id="blackout" class="blackout hidden"></div>
 
   <!-- Top bar -->
   <header class="topbar">
-    <button id="btnMenu" class="iconBtn" aria-label="Open menu">☰</button>
+    <button id="btnMenu" class="iconBtn">☰</button>
 
     <div class="topbarMid">
       <div class="apiLine">
@@ -42,7 +39,7 @@
       <div class="statusLine">
         Upstream:
         <span id="upstreamPill" class="pill ok">
-          <span id="upstreamText">unknown</span>
+          <span id="upstreamText">ok</span>
         </span>
       </div>
     </div>
@@ -50,52 +47,49 @@
 
   <main class="wrap">
 
-    <!-- World Time ticker -->
+    <!-- World time ticker -->
     <section class="card">
-      <div class="sectionTitle">World Time</div>
-      <div class="ticker">
-        <div class="tickerTrack" id="timeTrack">Loading…</div>
+      <h2>World Time</h2>
+      <div class="tickerScroll">
+        <div id="timeTrack" class="track mono">Loading…</div>
       </div>
     </section>
 
-    <!-- Static World Map -->
-    <section class="card mapCard">
-      <div class="sectionTitle">World Map</div>
-
-      <div class="mapWrap">
-        <canvas id="mapCanvas"></canvas>
+    <!-- Map/Globe canvas -->
+    <section class="card globeCard">
+      <canvas id="globeCanvas"></canvas>
+      <div class="globeFooter">
+        <div id="globeStatus">Map loading…</div>
+        <div class="hint">Day/Night overlay uses device time (no external API).</div>
       </div>
-
-      <div class="subtle">Day/Night overlay uses device time (no external API).</div>
-      <div id="mapStatus" class="subtle">Map loading…</div>
     </section>
 
     <section class="card">
-      <div class="sectionTitle">Weather</div>
+      <h2>Weather</h2>
       <div id="weatherText" class="mono">Loading…</div>
       <div class="subtle">Source: Open-Meteo (browser geolocation)</div>
     </section>
 
     <section class="card">
-      <div class="sectionTitle">News</div>
-      <div class="ticker">
-        <div id="newsTrack" class="tickerTrack mono">Loading…</div>
+      <h2>News</h2>
+      <div class="tickerScroll">
+        <div id="newsTrack" class="track mono">Loading…</div>
       </div>
       <div class="subtle">Source: Backend (/tools/news)</div>
     </section>
 
     <section class="card">
-      <div class="sectionTitle">Files</div>
-      <div class="filesRow">
-        <input id="fileInput" type="file" class="fileInput" />
-        <button id="btnUpload" class="btn">Upload</button>
+      <h2>Files</h2>
+      <div class="fileRow">
+        <input id="fileInput" type="file" />
+        <button id="uploadBtn" class="btn">Upload</button>
       </div>
-      <div id="filesList" class="filesList mono">No files yet</div>
+      <div id="filesList" class="mono subtleBox">Loading…</div>
       <div class="subtle">Source: Backend (/files)</div>
     </section>
 
     <section class="card">
-      <div class="sectionTitle">Terminal</div>
+      <h2>Terminal</h2>
       <pre id="terminal" class="terminal"></pre>
 
       <div class="promptRow">
