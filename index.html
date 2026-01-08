@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ARC OMEGA</title>
+
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -20,6 +21,7 @@
       <button id="btnRefreshWeather" class="btn">Refresh weather</button>
       <button id="btnRefreshNews" class="btn">Refresh news</button>
 
+      <!-- ✅ Council Log lives in drawer -->
       <button id="btnCouncilLog" class="btn">Council log</button>
 
       <button id="btnBlackout" class="btn danger">Blackout</button>
@@ -31,14 +33,15 @@
   <!-- Blackout -->
   <div id="blackout" class="blackout hidden"></div>
 
-  <!-- ✅ Council Log Overlay -->
-  <div id="councilOverlay" class="modalOverlay hidden">
+  <!-- ✅ Council Log Modal (hidden by default) -->
+  <div id="councilOverlay" class="modalOverlay hidden" role="dialog" aria-modal="true">
     <div class="modal">
       <div class="modalHeader">
         <div class="modalTitle">Council Log</div>
         <button id="btnCloseCouncil" class="iconBtn">✕</button>
       </div>
-      <pre id="councilText" class="terminal"></pre>
+      <pre id="councilText" class="terminal mono">Loading…</pre>
+      <div class="subtle">Source: Backend (/council/last)</div>
     </div>
   </div>
 
@@ -103,7 +106,7 @@
 
     <section class="card">
       <h2>Terminal</h2>
-      <pre id="terminal" class="terminal"></pre>
+      <pre id="terminal" class="terminal mono"></pre>
 
       <div class="promptRow">
         <input id="prompt" class="prompt" placeholder="Type a message…" />
