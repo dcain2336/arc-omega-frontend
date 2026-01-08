@@ -102,31 +102,6 @@ async function refreshBackendStatus(force = false) {
 refreshBackendStatus();
 setInterval(refreshBackendStatus, 12000);
 
-/* Send message */
-async function sendMessage() {
-  const msg = (promptEl?.value || "").trim();
-  if (!msg) return;
-
-  promptEl.value = "";
-  log(`> ${msg}`);
-
-  try {
-    // council auto happens server-side now; no need to set flags here
-    const out = await apiPost("/query", { message: msg });
-    if (!out.ok) {
-      log(`! error: ${out.error || "unknown"}`);
-      return;
-    }
-    log(out.text || "(no text)");
-  } catch (e) {
-    log(`send error: ${e.message || String(e)}`);
-  }
-}
-sendBtn?.addEventListener("click", sendMessage);
-promptEl?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendMessage();
-});
-
 /* Geolocation */
 function getPosition() {
   return new Promise((resolve) => {
@@ -144,10 +119,9 @@ async function refreshWeather() {
   try {
     const pos = await getPosition();
     if (!pos) {
-      weatherText.textContent = "Weather unavailable (no location / blocked)";
+      if (weatherText) weatherText.textContent = "Weather unavailable (no location / blocked)";
       return;
     }
-
     const lat = pos.coords.latitude;
     const lon = pos.coords.longitude;
 
@@ -159,20 +133,24 @@ async function refreshWeather() {
     const cw = data.current_weather;
 
     if (!cw) {
-      weatherText.textContent = "Weather unavailable";
+      if (weatherText) weatherText.textContent = "Weather unavailable";
       return;
     }
 
     const tempF = (cw.temperature * 9 / 5) + 32;
-    weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
+    if (weatherText) weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
   } catch {
-    weatherText.textContent = "Weather unavailable";
+    if (weatherText) weatherText.textContent = "Weather unavailable";
   }
 }
 refreshWeather();
 setInterval(refreshWeather, 10 * 60 * 1000);
 
-/* World Time ticker */
+/* ---------- TICKERS (time + news) ---------- */
+/* IMPORTANT:
+   We build content duplicated twice so the CSS marquee goes -50% and loops smoothly.
+*/
+
 function buildWorldTimeLine() {
   const zones = [
     { name: "LOCAL", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
@@ -205,32 +183,39 @@ function buildWorldTimeLine() {
 
   return pieces.join("   •   ");
 }
+
 function refreshWorldTime() {
   if (!timeTrack) return;
   const line = buildWorldTimeLine();
-  // duplicate so marquee stays continuous
-  timeTrack.textContent = line + "   •   " + line;
+  timeTrack.textContent = `${line}   •   ${line}`;
 }
 refreshWorldTime();
 setInterval(refreshWorldTime, 1000);
 
 /* News ticker */
 async function refreshNews() {
+  if (!newsTrack) return;
   try {
     const data = await apiGet("/tools/news");
-    const headlines = data?.headlines || [];
-    const clean = headlines.filter((h) => typeof h === "string" && h.trim().length);
+    const headlines = Array.isArray(data?.headlines) ? data.headlines : [];
+    const clean = headlines
+      .filter((h) => typeof h === "string")
+      .map((h) => h.trim())
+      .filter((h) => h.length);
+
     const base = clean.length ? clean.join("   •   ") : "No headlines right now";
-    // duplicate so it scrolls smoothly like the time ticker
-    newsTrack.textContent = base + "   •   " + base;
+    newsTrack.textContent = `${base}   •   ${base}`;
   } catch {
-    newsTrack.textContent = "News unavailable   •   News unavailable";
+    newsTrack.textContent = `News unavailable   •   News unavailable`;
   }
 }
 refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
-/* Files */
+/* ---------- FILES ---------- */
+let lastUploadedFileId = null;
+let lastUploadedMime = null;
+
 async function refreshFilesList() {
   if (!filesList) return;
   try {
@@ -244,9 +229,13 @@ async function refreshFilesList() {
       filesList.textContent = "No files yet";
       return;
     }
-    // render as simple list with download links
+
     filesList.innerHTML = files.map((f) => {
-      const name = (f.name || "file").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const name = (f.name || "file")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
       return `• <a href="${API_BASE}/files/${f.id}" target="_blank" rel="noopener noreferrer">${name}</a> (${f.size} bytes)`;
     }).join("<br/>");
   } catch {
@@ -272,6 +261,9 @@ uploadBtn?.addEventListener("click", async () => {
       return;
     }
 
+    lastUploadedFileId = data.id;
+    lastUploadedMime = data.content_type || file.type || null;
+
     log(`uploaded: ${data.name} (${data.size} bytes)`);
     fileInput.value = "";
     refreshFilesList();
@@ -283,16 +275,65 @@ uploadBtn?.addEventListener("click", async () => {
 refreshFilesList();
 setInterval(refreshFilesList, 60 * 1000);
 
-/* -----------------------------------------
-   Map mode (static world map + day/night)
-   Uses: ./assets/world-map-blue.png
------------------------------------------ */
+/* ---------- “Tell me about the picture I uploaded” helper ---------- */
+async function maybeAnalyzeLatestImage(userText) {
+  const t = (userText || "").toLowerCase();
+  const mentionsImage = t.includes("picture") || t.includes("image") || t.includes("photo") || t.includes("uploaded");
+
+  if (!mentionsImage) return null;
+  if (!lastUploadedFileId) return null;
+
+  // only try analyzer for image-ish uploads
+  const imageish = (lastUploadedMime || "").startsWith("image/");
+  if (!imageish) return null;
+
+  try {
+    const out = await apiPost(`/files/${encodeURIComponent(lastUploadedFileId)}/analyze`, {
+      prompt: "Describe the image clearly. Include key objects, text, and any safety concerns. Be concise.",
+    });
+    if (out.ok && out.text) return out.text;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/* Send message */
+async function sendMessage() {
+  const msg = (promptEl?.value || "").trim();
+  if (!msg) return;
+
+  promptEl.value = "";
+  log(`> ${msg}`);
+
+  try {
+    const analysis = await maybeAnalyzeLatestImage(msg);
+    const payload = analysis
+      ? { message: `${msg}\n\n[CONTEXT: Image analysis of the last uploaded image]\n${analysis}` }
+      : { message: msg };
+
+    const out = await apiPost("/query", payload);
+    if (!out.ok) {
+      log(`! error: ${out.error || "unknown"}`);
+      return;
+    }
+    log(out.text || "(no text)");
+  } catch (e) {
+    log(`send error: ${e.message || String(e)}`);
+  }
+}
+sendBtn?.addEventListener("click", sendMessage);
+promptEl?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendMessage();
+});
+
+/* ---------- MAP MODE (static map + day/night + correct pin) ---------- */
 const canvas = document.getElementById("globeCanvas");
 const statusEl = document.getElementById("globeStatus");
 const ctx = canvas?.getContext("2d");
 
 let mapImg = new Image();
-mapImg.src = "./assets/world-map-blue.png"; // ✅ your repo already has it
+mapImg.src = "./assets/world-map-blue.png";
 mapImg.crossOrigin = "anonymous";
 
 let userLat = null;
@@ -320,7 +361,7 @@ function solarSubpointUTC(d) {
   const lambda = L + 1.915 * Math.sin(g * Math.PI / 180) + 0.020 * Math.sin(2 * g * Math.PI / 180);
 
   const eps = 23.439 - 0.0000004 * n;
-  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180)); // declination (rad)
+  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180)); // rad
 
   const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
   const subLon = ((180 - timeUTC * 15) % 360 + 360) % 360; // 0..360
@@ -329,16 +370,14 @@ function solarSubpointUTC(d) {
   return { lat: subLat, lon: subLon, decRad: delta };
 }
 
-// equirectangular projection helpers for the map image on canvas
-function lonToX(lon, W) { return ((lon + 180) / 360) * W; }
-function latToY(lat, H) { return ((90 - lat) / 180) * H; }
-
 function drawMap() {
   if (!canvas || !ctx) return;
+
   setCanvasSize();
 
-  const W = canvas.getBoundingClientRect().width;
-  const H = canvas.getBoundingClientRect().height;
+  const rect = canvas.getBoundingClientRect();
+  const W = rect.width;
+  const H = rect.height;
 
   ctx.clearRect(0, 0, W, H);
 
@@ -351,11 +390,11 @@ function drawMap() {
     return;
   }
 
-  // draw map to fit canvas (cover)
+  // draw map as COVER (like CSS background-size: cover)
   const imgAR = mapImg.naturalWidth / mapImg.naturalHeight;
   const canvasAR = W / H;
-  let drawW, drawH, offX, offY;
 
+  let drawW, drawH, offX, offY;
   if (imgAR > canvasAR) {
     drawH = H;
     drawW = H * imgAR;
@@ -370,35 +409,44 @@ function drawMap() {
 
   ctx.drawImage(mapImg, offX, offY, drawW, drawH);
 
-  // day/night overlay (simple: shade "night side" half-plane in lon space around subsolar lon)
+  // day/night overlay: shade where |Δlon| > 90 relative to subsolar lon (fast + stable)
   const now = new Date();
   const sun = solarSubpointUTC(now);
   const subLon = sun.lon; // 0..360
 
-  // Build a soft night mask by drawing vertical strips where |Δlon| > 90 deg
   ctx.save();
+  // clip to the actual drawn image region (prevents sideways weirdness)
+  ctx.beginPath();
+  ctx.rect(offX, offY, drawW, drawH);
+  ctx.clip();
+
   ctx.globalAlpha = 0.38;
   ctx.fillStyle = "rgba(0,0,0,1)";
 
-  for (let x = 0; x < W; x += 2) {
-    // map x -> lon in [-180..180]
-    const lon = (x / W) * 360 - 180;
+  // draw vertical strips within the map region only
+  const x0 = Math.max(0, Math.floor(offX));
+  const x1 = Math.min(W, Math.ceil(offX + drawW));
+  for (let x = x0; x < x1; x += 2) {
+    const u = (x - offX) / drawW;         // 0..1 across the drawn map
+    const lon = u * 360 - 180;            // -180..180
     const lon360 = ((lon % 360) + 360) % 360;
 
-    // shortest angular distance to subLon
     let d = lon360 - subLon;
-    d = ((d + 540) % 360) - 180; // [-180..180]
+    d = ((d + 540) % 360) - 180;          // shortest distance [-180..180]
 
     if (Math.abs(d) > 90) {
-      ctx.fillRect(x, 0, 2, H);
+      ctx.fillRect(x, offY, 2, drawH);
     }
   }
   ctx.restore();
 
-  // user location pin
+  // user location pin (correctly mapped inside the COVER region)
   if (userLat != null && userLon != null) {
-    const px = offX + (userLon + 180) / 360 * drawW;
-    const py = offY + (90 - userLat) / 180 * drawH;
+    const u = (userLon + 180) / 360; // 0..1
+    const v = (90 - userLat) / 180;  // 0..1
+
+    const px = offX + u * drawW;
+    const py = offY + v * drawH;
 
     ctx.beginPath();
     ctx.arc(px, py, 4, 0, Math.PI * 2);
