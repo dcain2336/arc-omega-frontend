@@ -30,6 +30,17 @@ const btnRefreshBackend = document.getElementById("btnRefreshBackend");
 const btnRefreshWeather = document.getElementById("btnRefreshWeather");
 const btnRefreshNews = document.getElementById("btnRefreshNews");
 
+// ✅ Council Log UI
+const btnCouncilLog = document.getElementById("btnCouncilLog");
+const councilOverlay = document.getElementById("councilOverlay");
+const councilText = document.getElementById("councilText");
+const btnCloseCouncil = document.getElementById("btnCloseCouncil");
+
+// Map canvas
+const canvas = document.getElementById("globeCanvas");
+const statusEl = document.getElementById("globeStatus");
+const ctx = canvas?.getContext("2d");
+
 if (apiUrlText) apiUrlText.textContent = API_BASE;
 
 function log(line) {
@@ -81,6 +92,22 @@ btnRefreshBackend?.addEventListener("click", () => refreshBackendStatus(true));
 btnRefreshWeather?.addEventListener("click", refreshWeather);
 btnRefreshNews?.addEventListener("click", refreshNews);
 
+/* ✅ Council log overlay */
+function openCouncilLog() {
+  councilOverlay?.classList.remove("hidden");
+}
+function closeCouncilLog() {
+  councilOverlay?.classList.add("hidden");
+}
+btnCouncilLog?.addEventListener("click", () => {
+  openCouncilLog();
+  refreshCouncilLog();
+});
+btnCloseCouncil?.addEventListener("click", closeCouncilLog);
+councilOverlay?.addEventListener("click", (e) => {
+  if (e.target === councilOverlay) closeCouncilLog();
+});
+
 /* Backend status polling */
 let lastBackendRefresh = 0;
 async function refreshBackendStatus(force = false) {
@@ -90,19 +117,21 @@ async function refreshBackendStatus(force = false) {
 
   try {
     const ping = await apiGet("/ping");
-    if (upstreamText) upstreamText.textContent = ping.ok ? "ok" : "down";
-    upstreamPill?.classList.remove("bad");
-    upstreamPill?.classList.add("ok");
+    upstreamText.textContent = ping.ok ? "ok" : "down";
+    upstreamPill.classList.remove("bad");
+    upstreamPill.classList.add("ok");
   } catch {
-    if (upstreamText) upstreamText.textContent = "down";
-    upstreamPill?.classList.remove("ok");
-    upstreamPill?.classList.add("bad");
+    upstreamText.textContent = "down";
+    upstreamPill.classList.remove("ok");
+    upstreamPill.classList.add("bad");
   }
 }
 refreshBackendStatus();
 setInterval(refreshBackendStatus, 12000);
 
 /* Send message */
+let lastSessionId = "default";
+
 async function sendMessage() {
   const msg = (promptEl?.value || "").trim();
   if (!msg) return;
@@ -111,11 +140,17 @@ async function sendMessage() {
   log(`> ${msg}`);
 
   try {
-    const out = await apiPost("/query", { message: msg });
+    const out = await apiPost("/query", { message: msg, session_id: lastSessionId });
     if (!out.ok) {
       log(`! error: ${out.error || "unknown"}`);
       return;
     }
+
+    // show if council ran
+    if (out?.meta?.council_used) {
+      log(`[council] tools: ${(out.meta.tools_called || []).join(", ") || "none"}`);
+    }
+
     log(out.text || "(no text)");
   } catch (e) {
     log(`send error: ${e.message || String(e)}`);
@@ -143,7 +178,7 @@ async function refreshWeather() {
   try {
     const pos = await getPosition();
     if (!pos) {
-      if (weatherText) weatherText.textContent = "Weather unavailable (no location / blocked)";
+      weatherText.textContent = "Weather unavailable (no location / blocked)";
       return;
     }
 
@@ -158,14 +193,14 @@ async function refreshWeather() {
     const cw = data.current_weather;
 
     if (!cw) {
-      if (weatherText) weatherText.textContent = "Weather unavailable";
+      weatherText.textContent = "Weather unavailable";
       return;
     }
 
     const tempF = (cw.temperature * 9 / 5) + 32;
-    if (weatherText) weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
+    weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
   } catch {
-    if (weatherText) weatherText.textContent = "Weather unavailable";
+    weatherText.textContent = "Weather unavailable";
   }
 }
 refreshWeather();
@@ -191,7 +226,7 @@ function buildWorldTimeLine() {
   ];
 
   const now = new Date();
-  const pieces = zones.map((z) => {
+  return zones.map((z) => {
     const fmt = new Intl.DateTimeFormat([], {
       hour: "2-digit",
       minute: "2-digit",
@@ -200,28 +235,26 @@ function buildWorldTimeLine() {
       timeZone: z.tz,
     });
     return `${z.name} ${fmt.format(now)}`;
-  });
-
-  return pieces.join("   •   ");
+  }).join("   •   ");
 }
 function refreshWorldTime() {
   if (!timeTrack) return;
   const line = buildWorldTimeLine();
-  timeTrack.textContent = line + "   •   " + line; // duplicate for seamless marquee
+  timeTrack.textContent = line + "   •   " + line;
 }
 refreshWorldTime();
 setInterval(refreshWorldTime, 1000);
 
-/* News ticker */
+/* News ticker (speed is CSS-driven now) */
 async function refreshNews() {
   try {
     const data = await apiGet("/tools/news");
     const headlines = data?.headlines || [];
     const clean = headlines.filter((h) => typeof h === "string" && h.trim().length);
     const base = clean.length ? clean.join("   •   ") : "No headlines right now";
-    if (newsTrack) newsTrack.textContent = base + "   •   " + base; // duplicate for marquee
+    newsTrack.textContent = base + "   •   " + base;
   } catch {
-    if (newsTrack) newsTrack.textContent = "News unavailable   •   News unavailable";
+    newsTrack.textContent = "News unavailable   •   News unavailable";
   }
 }
 refreshNews();
@@ -241,7 +274,6 @@ async function refreshFilesList() {
       filesList.textContent = "No files yet";
       return;
     }
-
     filesList.innerHTML = files.map((f) => {
       const name = (f.name || "file").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       return `• <a href="${API_BASE}/files/${f.id}" target="_blank" rel="noopener noreferrer">${name}</a> (${f.size} bytes)`;
@@ -280,15 +312,25 @@ uploadBtn?.addEventListener("click", async () => {
 refreshFilesList();
 setInterval(refreshFilesList, 60 * 1000);
 
-/* -----------------------------------------
-   Map mode (static world map + day/night)
-   Uses: ./assets/world-map-blue.png
-   IMPORTANT FIX: draw as CONTAIN (no cropping) so pin math is correct.
------------------------------------------ */
-const canvas = document.getElementById("globeCanvas");
-const statusEl = document.getElementById("globeStatus");
-const ctx = canvas?.getContext("2d");
+/* ✅ Council Log fetch */
+async function refreshCouncilLog() {
+  if (!councilText) return;
+  try {
+    const data = await apiGet(`/council/last?session_id=${encodeURIComponent(lastSessionId)}`);
+    const last = data?.last;
+    if (!last) {
+      councilText.textContent = "No council log yet for this session.";
+      return;
+    }
+    councilText.textContent = JSON.stringify(last, null, 2);
+  } catch (e) {
+    councilText.textContent = `Council log unavailable: ${e.message || String(e)}`;
+  }
+}
 
+/* -----------------------------------------
+   Map mode (contain draw so pin is correct)
+----------------------------------------- */
 let mapImg = new Image();
 mapImg.src = "./assets/world-map-blue.png";
 mapImg.crossOrigin = "anonymous";
@@ -327,22 +369,12 @@ function solarSubpointUTC(d) {
   return { lat: subLat, lon: subLon };
 }
 
-// normalize lon to [-180..180]
-function normLon(lon) {
-  let x = lon;
-  while (x > 180) x -= 360;
-  while (x < -180) x += 360;
-  return x;
-}
-
 function drawMap() {
   if (!canvas || !ctx) return;
   setCanvasSize();
 
-  const rect = canvas.getBoundingClientRect();
-  const W = rect.width;
-  const H = rect.height;
-
+  const W = canvas.getBoundingClientRect().width;
+  const H = canvas.getBoundingClientRect().height;
   ctx.clearRect(0, 0, W, H);
 
   // background
@@ -354,12 +386,11 @@ function drawMap() {
     return;
   }
 
-  // draw map to FIT (contain) canvas => no cropping
+  // ✅ CONTAIN (no crop) to keep projection math aligned
   const imgAR = mapImg.naturalWidth / mapImg.naturalHeight;
   const canvasAR = W / H;
 
   let drawW, drawH, offX, offY;
-
   if (imgAR > canvasAR) {
     drawW = W;
     drawH = W / imgAR;
@@ -374,36 +405,31 @@ function drawMap() {
 
   ctx.drawImage(mapImg, offX, offY, drawW, drawH);
 
-  // day/night overlay (simple longitude-based night mask)
+  // day/night overlay (simple lon half-plane)
   const now = new Date();
   const sun = solarSubpointUTC(now);
-  const subLon = sun.lon; // 0..360
+  const subLon = sun.lon;
 
   ctx.save();
   ctx.globalAlpha = 0.38;
   ctx.fillStyle = "rgba(0,0,0,1)";
 
-  for (let i = 0; i < drawW; i += 2) {
-    // i (0..drawW) maps to lon (-180..180)
-    const lon = (i / drawW) * 360 - 180;
+  // only shade within the image area, not the letterbox
+  for (let x = 0; x < drawW; x += 2) {
+    const lon = (x / drawW) * 360 - 180;
     const lon360 = ((lon % 360) + 360) % 360;
-
     let d = lon360 - subLon;
-    d = ((d + 540) % 360) - 180;
-
+    d = ((d + 540) % 360) - 180; // [-180..180]
     if (Math.abs(d) > 90) {
-      ctx.fillRect(offX + i, offY, 2, drawH);
+      ctx.fillRect(offX + x, offY, 2, drawH);
     }
   }
   ctx.restore();
 
-  // user location pin
+  // user pin
   if (userLat != null && userLon != null) {
-    const lon = normLon(userLon);
-    const lat = Math.max(-90, Math.min(90, userLat));
-
-    const px = offX + ((lon + 180) / 360) * drawW;
-    const py = offY + ((90 - lat) / 180) * drawH;
+    const px = offX + ((userLon + 180) / 360) * drawW;
+    const py = offY + ((90 - userLat) / 180) * drawH;
 
     ctx.beginPath();
     ctx.arc(px, py, 4, 0, Math.PI * 2);
@@ -411,7 +437,7 @@ function drawMap() {
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(px, py, 10, 0, Math.PI * 2);
+    ctx.arc(px, py, 12, 0, Math.PI * 2);
     ctx.strokeStyle = "rgba(53,232,255,0.35)";
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -434,7 +460,6 @@ window.addEventListener("resize", () => {
   setCanvasSize();
   setTimeout(setCanvasSize, 250);
 });
-
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     if (animId) cancelAnimationFrame(animId);
@@ -444,7 +469,6 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// load location once, then run
 (async () => {
   const pos = await getPosition();
   if (pos) {
