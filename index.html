@@ -4,16 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ARC OMEGA</title>
-
   <link rel="stylesheet" href="./styles.css" />
-
-  <!-- Leaflet (OSM map, no API key) -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  />
 </head>
 <body>
 
@@ -25,16 +16,27 @@
     </div>
 
     <div class="drawerBody">
+      <div class="drawerSectionTitle">System</div>
       <button id="btnRefreshBackend" class="btn">Refresh backend</button>
       <button id="btnRefreshWeather" class="btn">Refresh weather</button>
       <button id="btnRefreshNews" class="btn">Refresh news</button>
-      <button id="btnRefreshFiles" class="btn">Refresh files</button>
 
       <div class="divider"></div>
 
-      <!-- ✅ Council Log lives here now -->
-      <button id="btnOpenCouncilLog" class="btn">Open council log</button>
-      <button id="btnHideCouncilLog" class="btn subtleBtn hidden">Hide council log</button>
+      <div class="drawerSectionTitle">Files</div>
+      <div class="subtle mono">Upload → stored in Mongo/GridFS</div>
+
+      <input id="fileInput" type="file" class="fileInput" />
+      <button id="uploadBtn" class="btn">Upload</button>
+
+      <div class="subtle mono" style="margin-top:10px;">Stored files</div>
+      <div id="filesList" class="filesList mono">Loading…</div>
+
+      <div class="divider"></div>
+
+      <div class="drawerSectionTitle">Council</div>
+      <button id="btnCouncilLog" class="btn">Open council log</button>
+      <div id="councilLogBox" class="councilLog mono hidden"></div>
 
       <div class="divider"></div>
 
@@ -43,8 +45,6 @@
   </div>
 
   <div id="drawerOverlay" class="overlay hidden"></div>
-
-  <!-- Blackout -->
   <div id="blackout" class="blackout hidden"></div>
 
   <!-- Top bar -->
@@ -65,22 +65,11 @@
   </header>
 
   <main class="wrap">
-
-    <!-- World Time -->
-    <section class="card">
-      <h2>World Time</h2>
-      <div class="ticker">
-        <div id="timeTrack" class="mono tickerText">Loading…</div>
-      </div>
-      <div class="subtle">Source: Device timezones</div>
-    </section>
-
-    <!-- ✅ Real map -->
-    <section class="card mapCard">
-      <div id="map" class="map"></div>
+    <section class="card globeCard">
+      <canvas id="globeCanvas"></canvas>
       <div class="globeFooter">
-        <div id="mapStatus">Map loading…</div>
-        <div class="hint">Map: OpenStreetMap (no API key). Night band uses device UTC (approx).</div>
+        <div id="globeStatus">Map loading…</div>
+        <div class="hint">Day/Night shading uses device time.</div>
       </div>
     </section>
 
@@ -93,50 +82,28 @@
     <section class="card">
       <h2>News</h2>
       <div class="ticker">
-        <div id="newsTrack" class="mono tickerText">Loading…</div>
+        <div id="newsTrack" class="mono tickerTrack">Loading…</div>
       </div>
       <div class="subtle">Source: Backend (/tools/news)</div>
     </section>
 
     <section class="card">
-      <h2>Files</h2>
-      <div class="fileRow">
-        <input id="fileInput" type="file" />
-        <button id="uploadBtn" class="btn">Upload</button>
-      </div>
-      <div id="filesList" class="mono filesBox">Loading…</div>
-      <div class="subtle">Source: Backend (/files)</div>
-    </section>
-
-    <!-- ✅ Council log section (hidden until drawer button is clicked) -->
-    <section id="councilCard" class="card hidden">
-      <h2>Council Log</h2>
-      <div class="subtle">Source: Backend (/council/last)</div>
-      <pre id="councilLog" class="terminal"></pre>
-      <div class="row">
-        <button id="btnRefreshCouncilLog" class="btn">Refresh council log</button>
-        <button id="btnClearCouncilLog" class="btn subtleBtn">Clear</button>
+      <h2>World Time</h2>
+      <div class="ticker">
+        <div id="timeTrack" class="mono tickerTrack">Loading…</div>
       </div>
     </section>
 
     <section class="card">
       <h2>Terminal</h2>
-      <pre id="terminal" class="terminal"></pre>
+      <pre id="terminal" class="terminal mono"></pre>
 
       <div class="promptRow">
         <input id="prompt" class="prompt" placeholder="Type a message…" />
         <button id="sendBtn" class="btn">Send</button>
       </div>
     </section>
-
   </main>
-
-  <!-- Leaflet JS -->
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
 
   <script src="./app.js"></script>
 </body>
