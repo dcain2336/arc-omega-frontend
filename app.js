@@ -146,11 +146,7 @@ async function refreshWeather() {
 refreshWeather();
 setInterval(refreshWeather, 10 * 60 * 1000);
 
-/* ---------- TICKERS (time + news) ---------- */
-/* IMPORTANT:
-   We build content duplicated twice so the CSS marquee goes -50% and loops smoothly.
-*/
-
+/* World Time ticker */
 function buildWorldTimeLine() {
   const zones = [
     { name: "LOCAL", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
@@ -183,7 +179,6 @@ function buildWorldTimeLine() {
 
   return pieces.join("   •   ");
 }
-
 function refreshWorldTime() {
   if (!timeTrack) return;
   const line = buildWorldTimeLine();
@@ -212,7 +207,7 @@ async function refreshNews() {
 refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
-/* ---------- FILES ---------- */
+/* Files */
 let lastUploadedFileId = null;
 let lastUploadedMime = null;
 
@@ -235,7 +230,6 @@ async function refreshFilesList() {
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
-
       return `• <a href="${API_BASE}/files/${f.id}" target="_blank" rel="noopener noreferrer">${name}</a> (${f.size} bytes)`;
     }).join("<br/>");
   } catch {
@@ -275,21 +269,19 @@ uploadBtn?.addEventListener("click", async () => {
 refreshFilesList();
 setInterval(refreshFilesList, 60 * 1000);
 
-/* ---------- “Tell me about the picture I uploaded” helper ---------- */
+/* “Tell me about the picture I uploaded” helper */
 async function maybeAnalyzeLatestImage(userText) {
   const t = (userText || "").toLowerCase();
   const mentionsImage = t.includes("picture") || t.includes("image") || t.includes("photo") || t.includes("uploaded");
-
   if (!mentionsImage) return null;
   if (!lastUploadedFileId) return null;
 
-  // only try analyzer for image-ish uploads
   const imageish = (lastUploadedMime || "").startsWith("image/");
   if (!imageish) return null;
 
   try {
     const out = await apiPost(`/files/${encodeURIComponent(lastUploadedFileId)}/analyze`, {
-      prompt: "Describe the image clearly. Include key objects, text, and any safety concerns. Be concise.",
+      prompt: "Describe the image clearly. Include key objects and any text you can read. Be concise.",
     });
     if (out.ok && out.text) return out.text;
   } catch {
@@ -312,6 +304,7 @@ async function sendMessage() {
       ? { message: `${msg}\n\n[CONTEXT: Image analysis of the last uploaded image]\n${analysis}` }
       : { message: msg };
 
+    // Council selection is automatic server-side
     const out = await apiPost("/query", payload);
     if (!out.ok) {
       log(`! error: ${out.error || "unknown"}`);
@@ -327,7 +320,7 @@ promptEl?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendMessage();
 });
 
-/* ---------- MAP MODE (static map + day/night + correct pin) ---------- */
+/* ---------------- MAP MODE ---------------- */
 const canvas = document.getElementById("globeCanvas");
 const statusEl = document.getElementById("globeStatus");
 const ctx = canvas?.getContext("2d");
@@ -339,13 +332,26 @@ mapImg.crossOrigin = "anonymous";
 let userLat = null;
 let userLon = null;
 
+/*
+  ✅ IMPORTANT: Your PNG likely has padding/margins or isn't perfectly equirectangular.
+  These crop values let us "calibrate" without replacing the image.
+
+  Try small tweaks (e.g. left=0.02 right=0.02) until the pin matches.
+  Values are FRACTIONS of the drawn map width/height.
+*/
+const MAP_CROP = {
+  left: 0.00,   // e.g. 0.02
+  right: 0.00,  // e.g. 0.02
+  top: 0.00,    // e.g. 0.01
+  bottom: 0.00, // e.g. 0.01
+};
+
 function setCanvasSize() {
   if (!canvas || !ctx) return;
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const w = Math.max(1, Math.floor(rect.width));
   const h = Math.max(1, Math.floor(rect.height));
-
   canvas.width = Math.floor(w * dpr);
   canvas.height = Math.floor(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -361,27 +367,24 @@ function solarSubpointUTC(d) {
   const lambda = L + 1.915 * Math.sin(g * Math.PI / 180) + 0.020 * Math.sin(2 * g * Math.PI / 180);
 
   const eps = 23.439 - 0.0000004 * n;
-  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180)); // rad
+  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180));
 
   const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
-  const subLon = ((180 - timeUTC * 15) % 360 + 360) % 360; // 0..360
-  const subLat = delta * 180 / Math.PI;
+  const subLon = ((180 - timeUTC * 15) % 360 + 360) % 360;
 
-  return { lat: subLat, lon: subLon, decRad: delta };
+  return { lon: subLon, lat: delta * 180 / Math.PI };
 }
 
 function drawMap() {
   if (!canvas || !ctx) return;
 
   setCanvasSize();
-
   const rect = canvas.getBoundingClientRect();
   const W = rect.width;
   const H = rect.height;
 
   ctx.clearRect(0, 0, W, H);
 
-  // background
   ctx.fillStyle = "rgba(0,0,0,0.18)";
   ctx.fillRect(0, 0, W, H);
 
@@ -390,7 +393,6 @@ function drawMap() {
     return;
   }
 
-  // draw map as COVER (like CSS background-size: cover)
   const imgAR = mapImg.naturalWidth / mapImg.naturalHeight;
   const canvasAR = W / H;
 
@@ -409,44 +411,46 @@ function drawMap() {
 
   ctx.drawImage(mapImg, offX, offY, drawW, drawH);
 
-  // day/night overlay: shade where |Δlon| > 90 relative to subsolar lon (fast + stable)
+  // Apply crop calibration region (for mapping + overlays)
+  const cropX = offX + drawW * MAP_CROP.left;
+  const cropY = offY + drawH * MAP_CROP.top;
+  const cropW = drawW * (1 - MAP_CROP.left - MAP_CROP.right);
+  const cropH = drawH * (1 - MAP_CROP.top - MAP_CROP.bottom);
+
+  // Day/night overlay
   const now = new Date();
   const sun = solarSubpointUTC(now);
-  const subLon = sun.lon; // 0..360
+  const subLon = sun.lon;
 
   ctx.save();
-  // clip to the actual drawn image region (prevents sideways weirdness)
   ctx.beginPath();
-  ctx.rect(offX, offY, drawW, drawH);
+  ctx.rect(cropX, cropY, cropW, cropH);
   ctx.clip();
 
   ctx.globalAlpha = 0.38;
   ctx.fillStyle = "rgba(0,0,0,1)";
 
-  // draw vertical strips within the map region only
-  const x0 = Math.max(0, Math.floor(offX));
-  const x1 = Math.min(W, Math.ceil(offX + drawW));
+  const x0 = Math.max(0, Math.floor(cropX));
+  const x1 = Math.min(W, Math.ceil(cropX + cropW));
   for (let x = x0; x < x1; x += 2) {
-    const u = (x - offX) / drawW;         // 0..1 across the drawn map
-    const lon = u * 360 - 180;            // -180..180
+    const u = (x - cropX) / cropW;   // 0..1 across cropped map region
+    const lon = u * 360 - 180;
     const lon360 = ((lon % 360) + 360) % 360;
 
     let d = lon360 - subLon;
-    d = ((d + 540) % 360) - 180;          // shortest distance [-180..180]
-
-    if (Math.abs(d) > 90) {
-      ctx.fillRect(x, offY, 2, drawH);
-    }
+    d = ((d + 540) % 360) - 180;
+    if (Math.abs(d) > 90) ctx.fillRect(x, cropY, 2, cropH);
   }
+
   ctx.restore();
 
-  // user location pin (correctly mapped inside the COVER region)
+  // User pin (mapped inside the CROPPED region)
   if (userLat != null && userLon != null) {
-    const u = (userLon + 180) / 360; // 0..1
-    const v = (90 - userLat) / 180;  // 0..1
+    const u = (userLon + 180) / 360;
+    const v = (90 - userLat) / 180;
 
-    const px = offX + u * drawW;
-    const py = offY + v * drawH;
+    const px = cropX + u * cropW;
+    const py = cropY + v * cropH;
 
     ctx.beginPath();
     ctx.arc(px, py, 4, 0, Math.PI * 2);
@@ -477,7 +481,6 @@ window.addEventListener("resize", () => {
   setCanvasSize();
   setTimeout(setCanvasSize, 250);
 });
-
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     if (animId) cancelAnimationFrame(animId);
@@ -487,7 +490,6 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// load location once, then run
 (async () => {
   const pos = await getPosition();
   if (pos) {
