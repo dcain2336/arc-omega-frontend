@@ -1,6 +1,10 @@
 // frontend/app.js
 const API_BASE = "https://arc-omega-backend.onrender.com";
 
+// Marquee speeds (seconds)
+const TIME_SPEED_S = 60;   // looks good
+const NEWS_SPEED_S = 60;   // match time
+
 // Elements
 const apiUrlText = document.getElementById("apiUrlText");
 const upstreamText = document.getElementById("upstreamText");
@@ -102,6 +106,30 @@ async function refreshBackendStatus(force = false) {
 refreshBackendStatus();
 setInterval(refreshBackendStatus, 12000);
 
+/* Send message */
+async function sendMessage() {
+  const msg = (promptEl?.value || "").trim();
+  if (!msg) return;
+
+  promptEl.value = "";
+  log(`> ${msg}`);
+
+  try {
+    const out = await apiPost("/query", { message: msg, session_id: "default" });
+    if (!out.ok) {
+      log(`! error: ${out.error || "unknown"}`);
+      return;
+    }
+    log(out.text || "(no text)");
+  } catch (e) {
+    log(`send error: ${e.message || String(e)}`);
+  }
+}
+sendBtn?.addEventListener("click", sendMessage);
+promptEl?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendMessage();
+});
+
 /* Geolocation */
 function getPosition() {
   return new Promise((resolve) => {
@@ -119,9 +147,10 @@ async function refreshWeather() {
   try {
     const pos = await getPosition();
     if (!pos) {
-      if (weatherText) weatherText.textContent = "Weather unavailable (no location / blocked)";
+      weatherText.textContent = "Weather unavailable (no location / blocked)";
       return;
     }
+
     const lat = pos.coords.latitude;
     const lon = pos.coords.longitude;
 
@@ -133,20 +162,25 @@ async function refreshWeather() {
     const cw = data.current_weather;
 
     if (!cw) {
-      if (weatherText) weatherText.textContent = "Weather unavailable";
+      weatherText.textContent = "Weather unavailable";
       return;
     }
 
     const tempF = (cw.temperature * 9 / 5) + 32;
-    if (weatherText) weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
+    weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
   } catch {
-    if (weatherText) weatherText.textContent = "Weather unavailable";
+    weatherText.textContent = "Weather unavailable";
   }
 }
 refreshWeather();
 setInterval(refreshWeather, 10 * 60 * 1000);
 
 /* World Time ticker */
+function setMarqueeSpeed(el, seconds) {
+  if (!el) return;
+  el.style.setProperty("--marquee-speed", `${seconds}s`);
+}
+
 function buildWorldTimeLine() {
   const zones = [
     { name: "LOCAL", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
@@ -179,38 +213,44 @@ function buildWorldTimeLine() {
 
   return pieces.join("   •   ");
 }
+
 function refreshWorldTime() {
   if (!timeTrack) return;
+  setMarqueeSpeed(timeTrack, TIME_SPEED_S);
   const line = buildWorldTimeLine();
-  timeTrack.textContent = `${line}   •   ${line}`;
+  timeTrack.textContent = line + "   •   " + line;
 }
 refreshWorldTime();
 setInterval(refreshWorldTime, 1000);
 
 /* News ticker */
+function normalizeTickerText(items, minLen = 180) {
+  const clean = items.filter((s) => typeof s === "string" && s.trim().length).map((s) => s.trim());
+  let base = clean.length ? clean.join("   •   ") : "News unavailable";
+
+  // Make it long enough so it doesn't “flash” on mobile
+  while (base.length < minLen) base = base + "   •   " + base;
+
+  return base + "   •   " + base;
+}
+
 async function refreshNews() {
-  if (!newsTrack) return;
   try {
     const data = await apiGet("/tools/news");
-    const headlines = Array.isArray(data?.headlines) ? data.headlines : [];
-    const clean = headlines
-      .filter((h) => typeof h === "string")
-      .map((h) => h.trim())
-      .filter((h) => h.length);
-
-    const base = clean.length ? clean.join("   •   ") : "No headlines right now";
-    newsTrack.textContent = `${base}   •   ${base}`;
+    const headlines = data?.headlines || [];
+    if (!newsTrack) return;
+    setMarqueeSpeed(newsTrack, NEWS_SPEED_S);
+    newsTrack.textContent = normalizeTickerText(headlines, 220);
   } catch {
-    newsTrack.textContent = `News unavailable   •   News unavailable`;
+    if (!newsTrack) return;
+    setMarqueeSpeed(newsTrack, NEWS_SPEED_S);
+    newsTrack.textContent = normalizeTickerText(["News unavailable"], 220);
   }
 }
 refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
 /* Files */
-let lastUploadedFileId = null;
-let lastUploadedMime = null;
-
 async function refreshFilesList() {
   if (!filesList) return;
   try {
@@ -224,12 +264,8 @@ async function refreshFilesList() {
       filesList.textContent = "No files yet";
       return;
     }
-
     filesList.innerHTML = files.map((f) => {
-      const name = (f.name || "file")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+      const name = (f.name || "file").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       return `• <a href="${API_BASE}/files/${f.id}" target="_blank" rel="noopener noreferrer">${name}</a> (${f.size} bytes)`;
     }).join("<br/>");
   } catch {
@@ -245,7 +281,8 @@ uploadBtn?.addEventListener("click", async () => {
     const form = new FormData();
     form.append("file", file);
 
-    const r = await fetch(`${API_BASE}/files`, { method: "POST", body: form });
+    // ✅ send session_id so backend can find “latest image for this session”
+    const r = await fetch(`${API_BASE}/files?session_id=default`, { method: "POST", body: form });
     const txt = await r.text();
     let data;
     try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
@@ -254,9 +291,6 @@ uploadBtn?.addEventListener("click", async () => {
       log(`upload failed: ${data.error || txt}`);
       return;
     }
-
-    lastUploadedFileId = data.id;
-    lastUploadedMime = data.content_type || file.type || null;
 
     log(`uploaded: ${data.name} (${data.size} bytes)`);
     fileInput.value = "";
@@ -269,58 +303,10 @@ uploadBtn?.addEventListener("click", async () => {
 refreshFilesList();
 setInterval(refreshFilesList, 60 * 1000);
 
-/* “Tell me about the picture I uploaded” helper */
-async function maybeAnalyzeLatestImage(userText) {
-  const t = (userText || "").toLowerCase();
-  const mentionsImage = t.includes("picture") || t.includes("image") || t.includes("photo") || t.includes("uploaded");
-  if (!mentionsImage) return null;
-  if (!lastUploadedFileId) return null;
-
-  const imageish = (lastUploadedMime || "").startsWith("image/");
-  if (!imageish) return null;
-
-  try {
-    const out = await apiPost(`/files/${encodeURIComponent(lastUploadedFileId)}/analyze`, {
-      prompt: "Describe the image clearly. Include key objects and any text you can read. Be concise.",
-    });
-    if (out.ok && out.text) return out.text;
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-/* Send message */
-async function sendMessage() {
-  const msg = (promptEl?.value || "").trim();
-  if (!msg) return;
-
-  promptEl.value = "";
-  log(`> ${msg}`);
-
-  try {
-    const analysis = await maybeAnalyzeLatestImage(msg);
-    const payload = analysis
-      ? { message: `${msg}\n\n[CONTEXT: Image analysis of the last uploaded image]\n${analysis}` }
-      : { message: msg };
-
-    // Council selection is automatic server-side
-    const out = await apiPost("/query", payload);
-    if (!out.ok) {
-      log(`! error: ${out.error || "unknown"}`);
-      return;
-    }
-    log(out.text || "(no text)");
-  } catch (e) {
-    log(`send error: ${e.message || String(e)}`);
-  }
-}
-sendBtn?.addEventListener("click", sendMessage);
-promptEl?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendMessage();
-});
-
-/* ---------------- MAP MODE ---------------- */
+/* -----------------------------------------
+   Static map + day/night + correct pin
+   Uses: ./assets/world-map-blue.png
+----------------------------------------- */
 const canvas = document.getElementById("globeCanvas");
 const statusEl = document.getElementById("globeStatus");
 const ctx = canvas?.getContext("2d");
@@ -331,20 +317,6 @@ mapImg.crossOrigin = "anonymous";
 
 let userLat = null;
 let userLon = null;
-
-/*
-  ✅ IMPORTANT: Your PNG likely has padding/margins or isn't perfectly equirectangular.
-  These crop values let us "calibrate" without replacing the image.
-
-  Try small tweaks (e.g. left=0.02 right=0.02) until the pin matches.
-  Values are FRACTIONS of the drawn map width/height.
-*/
-const MAP_CROP = {
-  left: 0.00,   // e.g. 0.02
-  right: 0.00,  // e.g. 0.02
-  top: 0.00,    // e.g. 0.01
-  bottom: 0.00, // e.g. 0.01
-};
 
 function setCanvasSize() {
   if (!canvas || !ctx) return;
@@ -370,21 +342,38 @@ function solarSubpointUTC(d) {
   const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180));
 
   const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
-  const subLon = ((180 - timeUTC * 15) % 360 + 360) % 360;
+  const subLon = ((180 - timeUTC * 15) % 360 + 360) % 360; // 0..360
+  const subLat = delta * 180 / Math.PI;
 
-  return { lon: subLon, lat: delta * 180 / Math.PI };
+  return { lat: subLat, lon: subLon };
+}
+
+function wrapLon180(lon) {
+  let x = lon;
+  while (x > 180) x -= 360;
+  while (x < -180) x += 360;
+  return x;
+}
+
+// Convert lon/lat to x/y in the drawn image rectangle (with cover offsets)
+function projectToDrawRect(lon, lat, offX, offY, drawW, drawH) {
+  const L = wrapLon180(lon);
+  const x = offX + ((L + 180) / 360) * drawW;
+  const y = offY + ((90 - lat) / 180) * drawH;
+  return { x, y };
 }
 
 function drawMap() {
   if (!canvas || !ctx) return;
-
   setCanvasSize();
+
   const rect = canvas.getBoundingClientRect();
   const W = rect.width;
   const H = rect.height;
 
   ctx.clearRect(0, 0, W, H);
 
+  // background
   ctx.fillStyle = "rgba(0,0,0,0.18)";
   ctx.fillRect(0, 0, W, H);
 
@@ -393,6 +382,7 @@ function drawMap() {
     return;
   }
 
+  // draw map to fit canvas (cover)
   const imgAR = mapImg.naturalWidth / mapImg.naturalHeight;
   const canvasAR = W / H;
 
@@ -411,54 +401,45 @@ function drawMap() {
 
   ctx.drawImage(mapImg, offX, offY, drawW, drawH);
 
-  // Apply crop calibration region (for mapping + overlays)
-  const cropX = offX + drawW * MAP_CROP.left;
-  const cropY = offY + drawH * MAP_CROP.top;
-  const cropW = drawW * (1 - MAP_CROP.left - MAP_CROP.right);
-  const cropH = drawH * (1 - MAP_CROP.top - MAP_CROP.bottom);
-
-  // Day/night overlay
+  // day/night overlay (shade night: |Δlon| > 90 from subsolar lon)
   const now = new Date();
   const sun = solarSubpointUTC(now);
-  const subLon = sun.lon;
+  const subLon = sun.lon; // 0..360
 
   ctx.save();
-  ctx.beginPath();
-  ctx.rect(cropX, cropY, cropW, cropH);
-  ctx.clip();
-
   ctx.globalAlpha = 0.38;
   ctx.fillStyle = "rgba(0,0,0,1)";
 
-  const x0 = Math.max(0, Math.floor(cropX));
-  const x1 = Math.min(W, Math.ceil(cropX + cropW));
-  for (let x = x0; x < x1; x += 2) {
-    const u = (x - cropX) / cropW;   // 0..1 across cropped map region
-    const lon = u * 360 - 180;
+  // only shade within the drawn image rect
+  const left = Math.max(0, Math.floor(offX));
+  const right = Math.min(W, Math.ceil(offX + drawW));
+
+  for (let x = left; x < right; x += 2) {
+    // x -> lon in [-180..180] relative to drawn rect
+    const u = (x - offX) / drawW;     // 0..1
+    const lon = u * 360 - 180;        // -180..180
     const lon360 = ((lon % 360) + 360) % 360;
 
     let d = lon360 - subLon;
-    d = ((d + 540) % 360) - 180;
-    if (Math.abs(d) > 90) ctx.fillRect(x, cropY, 2, cropH);
-  }
+    d = ((d + 540) % 360) - 180;      // shortest distance [-180..180]
 
+    if (Math.abs(d) > 90) {
+      ctx.fillRect(x, offY, 2, drawH);
+    }
+  }
   ctx.restore();
 
-  // User pin (mapped inside the CROPPED region)
+  // user pin (correct mapping w/ cover offsets)
   if (userLat != null && userLon != null) {
-    const u = (userLon + 180) / 360;
-    const v = (90 - userLat) / 180;
-
-    const px = cropX + u * cropW;
-    const py = cropY + v * cropH;
+    const p = projectToDrawRect(userLon, userLat, offX, offY, drawW, drawH);
 
     ctx.beginPath();
-    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(53,232,255,0.95)";
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(px, py, 10, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
     ctx.strokeStyle = "rgba(53,232,255,0.35)";
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -481,6 +462,7 @@ window.addEventListener("resize", () => {
   setCanvasSize();
   setTimeout(setCanvasSize, 250);
 });
+
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     if (animId) cancelAnimationFrame(animId);
@@ -490,6 +472,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// load location once, then run
 (async () => {
   const pos = await getPosition();
   if (pos) {
