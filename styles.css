@@ -8,7 +8,6 @@
   --cyanSoft: rgba(53,232,255,.22);
   --shadow: 0 10px 30px rgba(0,0,0,.35);
 
-  /* ticker speed */
   --marquee-seconds: 22s;
 }
 
@@ -39,7 +38,6 @@ h2{
   letter-spacing:.2px;
 }
 
-/* Top bar */
 .topbar{
   position:sticky;
   top:0;
@@ -62,7 +60,6 @@ h2{
   letter-spacing:.2px;
 }
 
-/* Pill */
 .pill{
   display:inline-flex;
   align-items:center;
@@ -81,7 +78,6 @@ h2{
   color: #fb7185;
 }
 
-/* Layout */
 .wrap{
   max-width: 860px;
   margin: 0 auto;
@@ -91,7 +87,6 @@ h2{
   gap:12px;
 }
 
-/* Cards */
 .card{
   background: var(--card);
   border:1px solid var(--border);
@@ -101,7 +96,6 @@ h2{
   overflow:hidden;
 }
 
-/* Drawer */
 .drawer{
   position:fixed;
   left:-320px;
@@ -136,7 +130,6 @@ h2{
   z-index:55;
 }
 
-/* Buttons */
 .iconBtn{
   background: transparent;
   border:1px solid var(--border);
@@ -162,7 +155,7 @@ h2{
 }
 .smallBtn{padding:8px 10px}
 
-/* Terminal + prompt */
+/* ✅ Terminal text cyan now */
 .terminal{
   background: rgba(0,0,0,.22);
   border:1px solid rgba(255,255,255,.08);
@@ -170,10 +163,11 @@ h2{
   padding:10px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size:12px;
-  color: rgba(233,240,255,.92);
+  color: var(--cyan);
   white-space:pre-wrap;
   min-height:72px;
 }
+
 .promptRow{
   display:flex;
   gap:10px;
@@ -189,7 +183,6 @@ h2{
   outline:none;
 }
 
-/* Ticker (stable speed, smooth) */
 .ticker{
   position:relative;
   overflow:hidden;
@@ -214,10 +207,7 @@ h2{
   100% { transform: translateX(-50%); }
 }
 
-/* Map card */
-.globeCard{
-  padding:0;
-}
+.globeCard{ padding:0; }
 #globeCanvas{
   display:block;
   width:100%;
@@ -235,7 +225,6 @@ h2{
 .subtle{ color: var(--muted); font-size:12px; margin-top:6px; }
 .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 
-/* Files row */
 .fileRow{
   display:flex;
   gap:10px;
@@ -243,7 +232,6 @@ h2{
   margin-bottom:10px;
 }
 
-/* Blackout */
 .blackout{
   position:fixed;
   inset:0;
