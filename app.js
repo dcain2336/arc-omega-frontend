@@ -18,10 +18,8 @@ const fileInput = document.getElementById("fileInput");
 const uploadBtn = document.getElementById("uploadBtn");
 const filesList = document.getElementById("filesList");
 
-const councilCard = document.getElementById("councilCard");
-const councilLog = document.getElementById("councilLog");
-const btnRefreshCouncilLog = document.getElementById("btnRefreshCouncilLog");
-const btnClearCouncilLog = document.getElementById("btnClearCouncilLog");
+const btnCouncilLog = document.getElementById("btnCouncilLog");
+const councilLogBox = document.getElementById("councilLogBox");
 
 // Drawer / overlay / blackout
 const btnMenu = document.getElementById("btnMenu");
@@ -34,12 +32,19 @@ const blackout = document.getElementById("blackout");
 const btnRefreshBackend = document.getElementById("btnRefreshBackend");
 const btnRefreshWeather = document.getElementById("btnRefreshWeather");
 const btnRefreshNews = document.getElementById("btnRefreshNews");
-const btnRefreshFiles = document.getElementById("btnRefreshFiles");
-
-const btnOpenCouncilLog = document.getElementById("btnOpenCouncilLog");
-const btnHideCouncilLog = document.getElementById("btnHideCouncilLog");
 
 if (apiUrlText) apiUrlText.textContent = API_BASE;
+
+// Stable session id
+function getOrCreate(id, genFn) {
+  let v = localStorage.getItem(id);
+  if (!v) {
+    v = genFn();
+    localStorage.setItem(id, v);
+  }
+  return v;
+}
+const SESSION_ID = getOrCreate("arc_session_id", () => "s_" + Math.random().toString(36).slice(2, 10));
 
 function log(line) {
   if (!terminal) return;
@@ -89,29 +94,6 @@ blackout?.addEventListener("click", () => blackout?.classList.add("hidden"));
 btnRefreshBackend?.addEventListener("click", () => refreshBackendStatus(true));
 btnRefreshWeather?.addEventListener("click", refreshWeather);
 btnRefreshNews?.addEventListener("click", refreshNews);
-btnRefreshFiles?.addEventListener("click", refreshFilesList);
-
-/* Council Log drawer controls */
-function showCouncilLog() {
-  councilCard?.classList.remove("hidden");
-  btnOpenCouncilLog?.classList.add("hidden");
-  btnHideCouncilLog?.classList.remove("hidden");
-  refreshCouncilLog();
-  closeDrawer();
-}
-function hideCouncilLog() {
-  councilCard?.classList.add("hidden");
-  btnOpenCouncilLog?.classList.remove("hidden");
-  btnHideCouncilLog?.classList.add("hidden");
-  closeDrawer();
-}
-btnOpenCouncilLog?.addEventListener("click", showCouncilLog);
-btnHideCouncilLog?.addEventListener("click", hideCouncilLog);
-
-btnRefreshCouncilLog?.addEventListener("click", refreshCouncilLog);
-btnClearCouncilLog?.addEventListener("click", () => {
-  if (councilLog) councilLog.textContent = "";
-});
 
 /* Backend status polling */
 let lastBackendRefresh = 0;
@@ -135,8 +117,6 @@ refreshBackendStatus();
 setInterval(refreshBackendStatus, 12000);
 
 /* Send message */
-let lastCouncilSessionId = "default";
-
 async function sendMessage() {
   const msg = (promptEl?.value || "").trim();
   if (!msg) return;
@@ -145,21 +125,14 @@ async function sendMessage() {
   log(`> ${msg}`);
 
   try {
-    const out = await apiPost("/query", { message: msg, session_id: lastCouncilSessionId });
-
+    const out = await apiPost("/query", { message: msg, session_id: SESSION_ID, debug: false });
     if (!out.ok) {
       log(`! error: ${out.error || "unknown"}`);
       return;
     }
-
-    if (out.council_session_id) lastCouncilSessionId = out.council_session_id;
-
     log(out.text || "(no text)");
-
-    // If council log panel is open, refresh it after a response
-    if (councilCard && !councilCard.classList.contains("hidden")) {
-      refreshCouncilLog();
-    }
+    // update council log availability
+    await refreshCouncilLog(false);
   } catch (e) {
     log(`send error: ${e.message || String(e)}`);
   }
@@ -169,19 +142,19 @@ promptEl?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendMessage();
 });
 
-/* Geolocation helper */
+/* Geolocation */
 function getPosition() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve(pos),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 120000 }
+      { enableHighAccuracy: true, timeout: 9000, maximumAge: 120000 }
     );
   });
 }
 
-/* Weather (Open-Meteo via browser geolocation) */
+/* Weather (frontend) */
 async function refreshWeather() {
   try {
     const pos = await getPosition();
@@ -223,24 +196,19 @@ function buildWorldTimeLine() {
     { name: "MT", tz: "America/Denver" },
     { name: "PT", tz: "America/Los_Angeles" },
     { name: "UTC", tz: "UTC" },
-    { name: "London", tz: "Europe/London" },
-    { name: "Paris", tz: "Europe/Paris" },
-    { name: "Dubai", tz: "Asia/Dubai" },
     { name: "Manila", tz: "Asia/Manila" },
     { name: "Guam", tz: "Pacific/Guam" },
     { name: "Seoul", tz: "Asia/Seoul" },
     { name: "Tokyo", tz: "Asia/Tokyo" },
-    { name: "Sydney", tz: "Australia/Sydney" },
+    { name: "London", tz: "Europe/London" },
+    { name: "Dubai", tz: "Asia/Dubai" },
   ];
 
   const now = new Date();
   const pieces = zones.map((z) => {
     const fmt = new Intl.DateTimeFormat([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-      timeZone: z.tz,
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false, timeZone: z.tz
     });
     return `${z.name} ${fmt.format(now)}`;
   });
@@ -255,7 +223,7 @@ function refreshWorldTime() {
 refreshWorldTime();
 setInterval(refreshWorldTime, 1000);
 
-/* News ticker — keep same visual speed as time ticker (CSS controls duration) */
+/* News ticker */
 async function refreshNews() {
   try {
     const data = await apiGet("/tools/news");
@@ -270,15 +238,11 @@ async function refreshNews() {
 refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
-/* Files */
+/* Files list */
 async function refreshFilesList() {
   if (!filesList) return;
   try {
     const data = await apiGet("/files");
-    if (!data.ok) {
-      filesList.textContent = data.error || "Files unavailable";
-      return;
-    }
     const files = data.files || [];
     if (!files.length) {
       filesList.textContent = "No files yet";
@@ -292,7 +256,10 @@ async function refreshFilesList() {
     filesList.textContent = "Files unavailable";
   }
 }
+refreshFilesList();
+setInterval(refreshFilesList, 60 * 1000);
 
+/* Upload file (clears input after success) */
 uploadBtn?.addEventListener("click", async () => {
   if (!fileInput?.files?.length) return;
   const file = fileInput.files[0];
@@ -301,7 +268,7 @@ uploadBtn?.addEventListener("click", async () => {
     const form = new FormData();
     form.append("file", file);
 
-    const r = await fetch(`${API_BASE}/files`, { method: "POST", body: form });
+    const r = await fetch(`${API_BASE}/files`, { method: "POST", body: form, cache: "no-store" });
     const txt = await r.text();
     let data;
     try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
@@ -312,164 +279,221 @@ uploadBtn?.addEventListener("click", async () => {
     }
 
     log(`uploaded: ${data.name} (${data.size} bytes)`);
+
+    // ✅ clear the file picker after upload
     fileInput.value = "";
-    refreshFilesList();
+
+    await refreshFilesList();
   } catch (e) {
     log(`upload error: ${e.message || String(e)}`);
   }
 });
 
-refreshFilesList();
-setInterval(refreshFilesList, 60 * 1000);
+/* Council log in drawer */
+async function refreshCouncilLog(showBox = true) {
+  if (!councilLogBox) return;
 
-/* Council log */
-async function refreshCouncilLog() {
-  if (!councilLog) return;
   try {
-    const data = await apiGet("/council/last");
-    if (!data.ok || !data.has_log) {
-      councilLog.textContent = "No council log yet. Ask a question that triggers tools/council (weather/web/news/etc.).";
+    // Prefer session-specific, else last
+    const bySession = await apiGet(`/council/${encodeURIComponent(SESSION_ID)}`);
+    const run = bySession?.run && Object.keys(bySession.run).length ? bySession.run : (await apiGet("/council/last")).run;
+
+    if (!run || !run.council) {
+      councilLogBox.textContent = "No council session found yet for this session.";
+      if (showBox) councilLogBox.classList.remove("hidden");
       return;
     }
-    const events = data.events || [];
-    const lines = events.map((e) => {
-      const role = e.role || "Event";
-      const provider = e.provider ? ` (${e.provider}${e.model ? "/" + e.model : ""})` : "";
-      const text = (e.text || "").toString();
-      const tools = e.tools ? `\nTOOLS: ${JSON.stringify(e.tools, null, 2)}` : "";
-      const err = e.error ? `\nERROR: ${e.error}` : "";
-      return `== ${role}${provider} ==\n${text}${tools}${err}\n`;
-    });
-    councilLog.textContent = lines.join("\n");
-    councilLog.scrollTop = councilLog.scrollHeight;
+
+    const lines = [];
+    lines.push(`session_id: ${run.meta?.session_id || run.session_id || "—"}`);
+    lines.push(`tools_used: ${(run.meta?.tools_used || []).join(", ")}`);
+    lines.push(`subcommittees: ${(run.meta?.subcommittees || []).join(", ")}`);
+    lines.push("");
+
+    for (const step of run.council) {
+      const stage = step.stage || "step";
+      const prov = step.provider || "";
+      const model = step.model || "";
+      lines.push(`== ${stage.toUpperCase()} ${prov ? `(${prov}/${model})` : ""} ==`);
+
+      if (stage === "tools") {
+        lines.push(JSON.stringify(step.tool_plan || {}, null, 2));
+        lines.push(JSON.stringify(step.tool_results || {}, null, 2));
+      } else if (step.text) {
+        // don't dump huge; just keep readable
+        lines.push(String(step.text).slice(0, 1200));
+      }
+      lines.push("");
+    }
+
+    councilLogBox.textContent = lines.join("\n");
+    if (showBox) councilLogBox.classList.remove("hidden");
   } catch (e) {
-    councilLog.textContent = `Council log unavailable: ${e.message || String(e)}`;
+    councilLogBox.textContent = "Council log unavailable.";
+    if (showBox) councilLogBox.classList.remove("hidden");
   }
 }
 
-/* -----------------------------
-   ✅ REAL GEO MAP (Leaflet/OSM)
------------------------------ */
-const mapStatus = document.getElementById("mapStatus");
+btnCouncilLog?.addEventListener("click", async () => {
+  // toggle
+  if (councilLogBox?.classList.contains("hidden")) {
+    await refreshCouncilLog(true);
+  } else {
+    councilLogBox?.classList.add("hidden");
+  }
+});
 
-let map = null;
-let userMarker = null;
-let nightLayer = null;
+/* -----------------------------------------
+   Map mode (static world map + day/night)
+   Uses: ./assets/world-map-blue.png
+----------------------------------------- */
+const canvas = document.getElementById("globeCanvas");
+const statusEl = document.getElementById("globeStatus");
+const ctx = canvas?.getContext("2d");
+
+const mapImg = new Image();
+mapImg.src = "./assets/world-map-blue.png";
+
+let userLat = null;
+let userLon = null;
+
+function setCanvasSize() {
+  if (!canvas || !ctx) return;
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
 
 function solarSubpointUTC(d) {
-  // same approximate as before, but we only use longitude for a simple night band
+  const ms = d.getTime();
+  const jd = ms / 86400000 + 2440587.5;
+  const n = jd - 2451545.0;
+
+  const L = (280.46 + 0.9856474 * n) % 360;
+  const g = (357.528 + 0.9856003 * n) % 360;
+  const lambda = L + 1.915 * Math.sin(g * Math.PI / 180) + 0.020 * Math.sin(2 * g * Math.PI / 180);
+
+  const eps = 23.439 - 0.0000004 * n;
+  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180));
+
   const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
   const subLon = ((180 - timeUTC * 15) % 360 + 360) % 360; // 0..360
-  const lon = subLon > 180 ? subLon - 360 : subLon; // -180..180
-  return { lon };
+  const subLat = delta * 180 / Math.PI;
+  return { lat: subLat, lon: subLon };
 }
 
-function buildNightBandGeoJSON() {
-  // Simple approx: night = longitudes where |Δlon| > 90 from subsolar lon.
-  // We'll draw two big polygons that cover the night half-plane.
-  const now = new Date();
-  const { lon: sunLon } = solarSubpointUTC(now);
+function drawMap() {
+  if (!canvas || !ctx) return;
+  setCanvasSize();
 
-  // anti-solar center lon (middle of night)
-  let nightCenter = sunLon + 180;
-  if (nightCenter > 180) nightCenter -= 360;
+  const W = canvas.getBoundingClientRect().width;
+  const H = canvas.getBoundingClientRect().height;
 
-  // night longitudes range: [nightCenter-90 .. nightCenter+90] is *centered* on night,
-  // but we actually want the opposite of day, so this band is correct for a “night hemisphere”
-  let west = nightCenter - 90;
-  let east = nightCenter + 90;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  ctx.fillRect(0, 0, W, H);
 
-  // Normalize to [-180..180] but handle wrap by splitting polygons if needed
-  const polys = [];
-
-  function poly(w, e) {
-    return {
-      type: "Feature",
-      properties: {},
-      geometry: {
-        type: "Polygon",
-        coordinates: [[
-          [w, -85],
-          [e, -85],
-          [e,  85],
-          [w,  85],
-          [w, -85],
-        ]]
-      }
-    };
-  }
-
-  if (west < -180) {
-    polys.push(poly(west + 360, 180));
-    polys.push(poly(-180, east));
-  } else if (east > 180) {
-    polys.push(poly(west, 180));
-    polys.push(poly(-180, east - 360));
-  } else {
-    polys.push(poly(west, east));
-  }
-
-  return { type: "FeatureCollection", features: polys };
-}
-
-function initMap(lat, lon) {
-  if (!window.L) {
-    if (mapStatus) mapStatus.textContent = "Map failed (Leaflet missing)";
+  if (!mapImg.complete || mapImg.naturalWidth === 0) {
+    if (statusEl) statusEl.textContent = "Map loading…";
     return;
   }
 
-  map = L.map("map", { zoomControl: true }).setView([lat, lon], 7);
+  // cover-fit image into canvas
+  const imgAR = mapImg.naturalWidth / mapImg.naturalHeight;
+  const canvasAR = W / H;
+  let drawW, drawH, offX, offY;
 
-  // OSM tiles (no key)
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 18,
-    attribution: "&copy; OpenStreetMap contributors",
-  }).addTo(map);
+  if (imgAR > canvasAR) {
+    drawH = H;
+    drawW = H * imgAR;
+    offX = (W - drawW) / 2;
+    offY = 0;
+  } else {
+    drawW = W;
+    drawH = W / imgAR;
+    offX = 0;
+    offY = (H - drawH) / 2;
+  }
 
-  userMarker = L.circleMarker([lat, lon], {
-    radius: 8,
-    weight: 2,
-    color: "rgba(53,232,255,0.95)",
-    fillColor: "rgba(53,232,255,0.95)",
-    fillOpacity: 0.85,
-  }).addTo(map);
+  ctx.drawImage(mapImg, offX, offY, drawW, drawH);
 
-  userMarker.bindPopup("You are here").openPopup();
+  // day/night overlay
+  const sun = solarSubpointUTC(new Date());
+  const subLon = sun.lon; // 0..360
 
-  // Night band overlay
-  nightLayer = L.geoJSON(buildNightBandGeoJSON(), {
-    style: {
-      color: "rgba(0,0,0,0)",
-      weight: 0,
-      fillColor: "rgba(0,0,0,0.45)",
-      fillOpacity: 0.45,
-    },
-    interactive: false,
-  }).addTo(map);
+  ctx.save();
+  ctx.globalAlpha = 0.38;
+  ctx.fillStyle = "rgba(0,0,0,1)";
 
-  if (mapStatus) mapStatus.textContent = "Map running (geolocation)";
+  for (let x = 0; x < W; x += 2) {
+    const lon = (x / W) * 360 - 180;
+    const lon360 = ((lon % 360) + 360) % 360;
+    let d = lon360 - subLon;
+    d = ((d + 540) % 360) - 180;
+    if (Math.abs(d) > 90) ctx.fillRect(x, 0, 2, H);
+  }
+  ctx.restore();
+
+  // user pin
+  if (userLat != null && userLon != null) {
+    const px = offX + ((userLon + 180) / 360) * drawW;
+    const py = offY + ((90 - userLat) / 180) * drawH;
+
+    ctx.beginPath();
+    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(53,232,255,0.95)";
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(px, py, 10, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(53,232,255,0.35)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  if (statusEl) statusEl.textContent = "Map running";
 }
 
-function updateNightBand() {
-  if (!nightLayer) return;
-  nightLayer.clearLayers();
-  nightLayer.addData(buildNightBandGeoJSON());
+let animId = null;
+function startMapLoop() {
+  if (animId) cancelAnimationFrame(animId);
+  const loop = () => {
+    drawMap();
+    animId = requestAnimationFrame(loop);
+  };
+  animId = requestAnimationFrame(loop);
 }
+
+window.addEventListener("resize", () => {
+  setCanvasSize();
+  setTimeout(setCanvasSize, 250);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (animId) cancelAnimationFrame(animId);
+    animId = null;
+  } else {
+    startMapLoop();
+  }
+});
 
 (async () => {
   const pos = await getPosition();
-
-  // If blocked, default near Camp Lejeune as a friendly fallback
-  const fallback = { lat: 34.632, lon: -77.340 }; // Camp Lejeune area approx
-  const lat = pos?.coords?.latitude ?? fallback.lat;
-  const lon = pos?.coords?.longitude ?? fallback.lon;
-
-  initMap(lat, lon);
-  updateNightBand();
-  setInterval(updateNightBand, 60 * 1000); // refresh night band every minute
+  if (pos) {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+  }
+  setCanvasSize();
+  startMapLoop();
 })();
 
-// Make Leaflet resize correctly if iOS changes layout
-window.addEventListener("resize", () => {
-  setTimeout(() => map?.invalidateSize?.(), 200);
-});
+mapImg.onload = () => {
+  setCanvasSize();
+  startMapLoop();
+};
