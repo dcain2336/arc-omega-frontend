@@ -1,10 +1,6 @@
 // frontend/app.js
 const API_BASE = "https://arc-omega-backend.onrender.com";
 
-// Marquee speeds (seconds)
-const TIME_SPEED_S = 60;   // looks good
-const NEWS_SPEED_S = 60;   // match time
-
 // Elements
 const apiUrlText = document.getElementById("apiUrlText");
 const upstreamText = document.getElementById("upstreamText");
@@ -94,13 +90,13 @@ async function refreshBackendStatus(force = false) {
 
   try {
     const ping = await apiGet("/ping");
-    upstreamText.textContent = ping.ok ? "ok" : "down";
-    upstreamPill.classList.remove("bad");
-    upstreamPill.classList.add("ok");
+    if (upstreamText) upstreamText.textContent = ping.ok ? "ok" : "down";
+    upstreamPill?.classList.remove("bad");
+    upstreamPill?.classList.add("ok");
   } catch {
-    upstreamText.textContent = "down";
-    upstreamPill.classList.remove("ok");
-    upstreamPill.classList.add("bad");
+    if (upstreamText) upstreamText.textContent = "down";
+    upstreamPill?.classList.remove("ok");
+    upstreamPill?.classList.add("bad");
   }
 }
 refreshBackendStatus();
@@ -115,7 +111,7 @@ async function sendMessage() {
   log(`> ${msg}`);
 
   try {
-    const out = await apiPost("/query", { message: msg, session_id: "default" });
+    const out = await apiPost("/query", { message: msg });
     if (!out.ok) {
       log(`! error: ${out.error || "unknown"}`);
       return;
@@ -137,7 +133,7 @@ function getPosition() {
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve(pos),
       () => resolve(null),
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   });
 }
@@ -147,7 +143,7 @@ async function refreshWeather() {
   try {
     const pos = await getPosition();
     if (!pos) {
-      weatherText.textContent = "Weather unavailable (no location / blocked)";
+      if (weatherText) weatherText.textContent = "Weather unavailable (no location / blocked)";
       return;
     }
 
@@ -162,25 +158,20 @@ async function refreshWeather() {
     const cw = data.current_weather;
 
     if (!cw) {
-      weatherText.textContent = "Weather unavailable";
+      if (weatherText) weatherText.textContent = "Weather unavailable";
       return;
     }
 
     const tempF = (cw.temperature * 9 / 5) + 32;
-    weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
+    if (weatherText) weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
   } catch {
-    weatherText.textContent = "Weather unavailable";
+    if (weatherText) weatherText.textContent = "Weather unavailable";
   }
 }
 refreshWeather();
 setInterval(refreshWeather, 10 * 60 * 1000);
 
 /* World Time ticker */
-function setMarqueeSpeed(el, seconds) {
-  if (!el) return;
-  el.style.setProperty("--marquee-speed", `${seconds}s`);
-}
-
 function buildWorldTimeLine() {
   const zones = [
     { name: "LOCAL", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
@@ -213,38 +204,24 @@ function buildWorldTimeLine() {
 
   return pieces.join("   •   ");
 }
-
 function refreshWorldTime() {
   if (!timeTrack) return;
-  setMarqueeSpeed(timeTrack, TIME_SPEED_S);
   const line = buildWorldTimeLine();
-  timeTrack.textContent = line + "   •   " + line;
+  timeTrack.textContent = line + "   •   " + line; // duplicate for seamless marquee
 }
 refreshWorldTime();
 setInterval(refreshWorldTime, 1000);
 
 /* News ticker */
-function normalizeTickerText(items, minLen = 180) {
-  const clean = items.filter((s) => typeof s === "string" && s.trim().length).map((s) => s.trim());
-  let base = clean.length ? clean.join("   •   ") : "News unavailable";
-
-  // Make it long enough so it doesn't “flash” on mobile
-  while (base.length < minLen) base = base + "   •   " + base;
-
-  return base + "   •   " + base;
-}
-
 async function refreshNews() {
   try {
     const data = await apiGet("/tools/news");
     const headlines = data?.headlines || [];
-    if (!newsTrack) return;
-    setMarqueeSpeed(newsTrack, NEWS_SPEED_S);
-    newsTrack.textContent = normalizeTickerText(headlines, 220);
+    const clean = headlines.filter((h) => typeof h === "string" && h.trim().length);
+    const base = clean.length ? clean.join("   •   ") : "No headlines right now";
+    if (newsTrack) newsTrack.textContent = base + "   •   " + base; // duplicate for marquee
   } catch {
-    if (!newsTrack) return;
-    setMarqueeSpeed(newsTrack, NEWS_SPEED_S);
-    newsTrack.textContent = normalizeTickerText(["News unavailable"], 220);
+    if (newsTrack) newsTrack.textContent = "News unavailable   •   News unavailable";
   }
 }
 refreshNews();
@@ -264,6 +241,7 @@ async function refreshFilesList() {
       filesList.textContent = "No files yet";
       return;
     }
+
     filesList.innerHTML = files.map((f) => {
       const name = (f.name || "file").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       return `• <a href="${API_BASE}/files/${f.id}" target="_blank" rel="noopener noreferrer">${name}</a> (${f.size} bytes)`;
@@ -281,8 +259,7 @@ uploadBtn?.addEventListener("click", async () => {
     const form = new FormData();
     form.append("file", file);
 
-    // ✅ send session_id so backend can find “latest image for this session”
-    const r = await fetch(`${API_BASE}/files?session_id=default`, { method: "POST", body: form });
+    const r = await fetch(`${API_BASE}/files`, { method: "POST", body: form });
     const txt = await r.text();
     let data;
     try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
@@ -304,8 +281,9 @@ refreshFilesList();
 setInterval(refreshFilesList, 60 * 1000);
 
 /* -----------------------------------------
-   Static map + day/night + correct pin
+   Map mode (static world map + day/night)
    Uses: ./assets/world-map-blue.png
+   IMPORTANT FIX: draw as CONTAIN (no cropping) so pin math is correct.
 ----------------------------------------- */
 const canvas = document.getElementById("globeCanvas");
 const statusEl = document.getElementById("globeStatus");
@@ -324,6 +302,7 @@ function setCanvasSize() {
   const dpr = window.devicePixelRatio || 1;
   const w = Math.max(1, Math.floor(rect.width));
   const h = Math.max(1, Math.floor(rect.height));
+
   canvas.width = Math.floor(w * dpr);
   canvas.height = Math.floor(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -348,19 +327,12 @@ function solarSubpointUTC(d) {
   return { lat: subLat, lon: subLon };
 }
 
-function wrapLon180(lon) {
+// normalize lon to [-180..180]
+function normLon(lon) {
   let x = lon;
   while (x > 180) x -= 360;
   while (x < -180) x += 360;
   return x;
-}
-
-// Convert lon/lat to x/y in the drawn image rectangle (with cover offsets)
-function projectToDrawRect(lon, lat, offX, offY, drawW, drawH) {
-  const L = wrapLon180(lon);
-  const x = offX + ((L + 180) / 360) * drawW;
-  const y = offY + ((90 - lat) / 180) * drawH;
-  return { x, y };
 }
 
 function drawMap() {
@@ -382,26 +354,27 @@ function drawMap() {
     return;
   }
 
-  // draw map to fit canvas (cover)
+  // draw map to FIT (contain) canvas => no cropping
   const imgAR = mapImg.naturalWidth / mapImg.naturalHeight;
   const canvasAR = W / H;
 
   let drawW, drawH, offX, offY;
+
   if (imgAR > canvasAR) {
-    drawH = H;
-    drawW = H * imgAR;
-    offX = (W - drawW) / 2;
-    offY = 0;
-  } else {
     drawW = W;
     drawH = W / imgAR;
     offX = 0;
     offY = (H - drawH) / 2;
+  } else {
+    drawH = H;
+    drawW = H * imgAR;
+    offX = (W - drawW) / 2;
+    offY = 0;
   }
 
   ctx.drawImage(mapImg, offX, offY, drawW, drawH);
 
-  // day/night overlay (shade night: |Δlon| > 90 from subsolar lon)
+  // day/night overlay (simple longitude-based night mask)
   const now = new Date();
   const sun = solarSubpointUTC(now);
   const subLon = sun.lon; // 0..360
@@ -410,36 +383,35 @@ function drawMap() {
   ctx.globalAlpha = 0.38;
   ctx.fillStyle = "rgba(0,0,0,1)";
 
-  // only shade within the drawn image rect
-  const left = Math.max(0, Math.floor(offX));
-  const right = Math.min(W, Math.ceil(offX + drawW));
-
-  for (let x = left; x < right; x += 2) {
-    // x -> lon in [-180..180] relative to drawn rect
-    const u = (x - offX) / drawW;     // 0..1
-    const lon = u * 360 - 180;        // -180..180
+  for (let i = 0; i < drawW; i += 2) {
+    // i (0..drawW) maps to lon (-180..180)
+    const lon = (i / drawW) * 360 - 180;
     const lon360 = ((lon % 360) + 360) % 360;
 
     let d = lon360 - subLon;
-    d = ((d + 540) % 360) - 180;      // shortest distance [-180..180]
+    d = ((d + 540) % 360) - 180;
 
     if (Math.abs(d) > 90) {
-      ctx.fillRect(x, offY, 2, drawH);
+      ctx.fillRect(offX + i, offY, 2, drawH);
     }
   }
   ctx.restore();
 
-  // user pin (correct mapping w/ cover offsets)
+  // user location pin
   if (userLat != null && userLon != null) {
-    const p = projectToDrawRect(userLon, userLat, offX, offY, drawW, drawH);
+    const lon = normLon(userLon);
+    const lat = Math.max(-90, Math.min(90, userLat));
+
+    const px = offX + ((lon + 180) / 360) * drawW;
+    const py = offY + ((90 - lat) / 180) * drawH;
 
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.arc(px, py, 4, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(53,232,255,0.95)";
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+    ctx.arc(px, py, 10, 0, Math.PI * 2);
     ctx.strokeStyle = "rgba(53,232,255,0.35)";
     ctx.lineWidth = 2;
     ctx.stroke();
