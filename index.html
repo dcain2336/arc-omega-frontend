@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ARC OMEGA</title>
-
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -20,6 +19,9 @@
       <button id="btnRefreshBackend" class="btn">Refresh backend</button>
       <button id="btnRefreshWeather" class="btn">Refresh weather</button>
       <button id="btnRefreshNews" class="btn">Refresh news</button>
+
+      <button id="btnCouncilLog" class="btn">Council log</button>
+
       <button id="btnBlackout" class="btn danger">Blackout</button>
     </div>
   </div>
@@ -28,6 +30,17 @@
 
   <!-- Blackout -->
   <div id="blackout" class="blackout hidden"></div>
+
+  <!-- ✅ Council Log Overlay -->
+  <div id="councilOverlay" class="modalOverlay hidden">
+    <div class="modal">
+      <div class="modalHeader">
+        <div class="modalTitle">Council Log</div>
+        <button id="btnCloseCouncil" class="iconBtn">✕</button>
+      </div>
+      <pre id="councilText" class="terminal"></pre>
+    </div>
+  </div>
 
   <!-- Top bar -->
   <header class="topbar">
@@ -48,16 +61,14 @@
 
   <main class="wrap">
 
-    <!-- World Time -->
     <section class="card">
       <h2>World Time</h2>
       <div class="ticker">
-        <div id="timeTrack" class="mono">Loading…</div>
+        <div id="timeTrack" class="mono track">Loading…</div>
       </div>
       <div class="subtle">Source: Device timezones</div>
     </section>
 
-    <!-- Map -->
     <section class="card globeCard">
       <canvas id="globeCanvas"></canvas>
       <div class="globeFooter">
@@ -66,35 +77,30 @@
       </div>
     </section>
 
-    <!-- Weather -->
     <section class="card">
       <h2>Weather</h2>
       <div id="weatherText" class="mono">Loading…</div>
       <div class="subtle">Source: Open-Meteo (browser geolocation)</div>
     </section>
 
-    <!-- News -->
     <section class="card">
       <h2>News</h2>
       <div class="ticker">
-        <div id="newsTrack" class="mono">Loading…</div>
+        <div id="newsTrack" class="mono track">Loading…</div>
       </div>
       <div class="subtle">Source: Backend (/tools/news)</div>
     </section>
 
-    <!-- Files -->
     <section class="card">
       <h2>Files</h2>
-      <div class="filesRow">
-        <input id="fileInput" type="file" class="fileInput" />
+      <div class="fileRow">
+        <input id="fileInput" type="file" />
         <button id="uploadBtn" class="btn">Upload</button>
       </div>
-
-      <div id="filesList" class="mono filesList">Loading…</div>
+      <div id="filesList" class="mono">No files yet</div>
       <div class="subtle">Source: Backend (/files)</div>
     </section>
 
-    <!-- Terminal -->
     <section class="card">
       <h2>Terminal</h2>
       <pre id="terminal" class="terminal"></pre>
