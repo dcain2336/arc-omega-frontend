@@ -48,6 +48,7 @@
 
   <main class="wrap">
 
+    <!-- World Time -->
     <section class="card">
       <h2>World Time</h2>
       <div class="ticker">
@@ -56,6 +57,7 @@
       <div class="subtle">Source: Device timezones</div>
     </section>
 
+    <!-- Map -->
     <section class="card globeCard">
       <canvas id="globeCanvas"></canvas>
       <div class="globeFooter">
@@ -64,12 +66,14 @@
       </div>
     </section>
 
+    <!-- Weather -->
     <section class="card">
       <h2>Weather</h2>
       <div id="weatherText" class="mono">Loading…</div>
       <div class="subtle">Source: Open-Meteo (browser geolocation)</div>
     </section>
 
+    <!-- News -->
     <section class="card">
       <h2>News</h2>
       <div class="ticker">
@@ -78,19 +82,19 @@
       <div class="subtle">Source: Backend (/tools/news)</div>
     </section>
 
+    <!-- Files -->
     <section class="card">
       <h2>Files</h2>
-
       <div class="filesRow">
-        <input id="fileInput" class="fileInput" type="file" />
+        <input id="fileInput" type="file" class="fileInput" />
         <button id="uploadBtn" class="btn">Upload</button>
       </div>
 
       <div id="filesList" class="mono filesList">Loading…</div>
-
       <div class="subtle">Source: Backend (/files)</div>
     </section>
 
+    <!-- Terminal -->
     <section class="card">
       <h2>Terminal</h2>
       <pre id="terminal" class="terminal"></pre>
