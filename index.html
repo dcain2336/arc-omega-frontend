@@ -6,6 +6,14 @@
   <title>ARC OMEGA</title>
 
   <link rel="stylesheet" href="./styles.css" />
+
+  <!-- Leaflet (OSM map, no API key) -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
 </head>
 <body>
 
@@ -20,9 +28,15 @@
       <button id="btnRefreshBackend" class="btn">Refresh backend</button>
       <button id="btnRefreshWeather" class="btn">Refresh weather</button>
       <button id="btnRefreshNews" class="btn">Refresh news</button>
+      <button id="btnRefreshFiles" class="btn">Refresh files</button>
 
-      <!-- ✅ Council Log lives in drawer -->
-      <button id="btnCouncilLog" class="btn">Council log</button>
+      <div class="divider"></div>
+
+      <!-- ✅ Council Log lives here now -->
+      <button id="btnOpenCouncilLog" class="btn">Open council log</button>
+      <button id="btnHideCouncilLog" class="btn subtleBtn hidden">Hide council log</button>
+
+      <div class="divider"></div>
 
       <button id="btnBlackout" class="btn danger">Blackout</button>
     </div>
@@ -32,18 +46,6 @@
 
   <!-- Blackout -->
   <div id="blackout" class="blackout hidden"></div>
-
-  <!-- ✅ Council Log Modal (hidden by default) -->
-  <div id="councilOverlay" class="modalOverlay hidden" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modalHeader">
-        <div class="modalTitle">Council Log</div>
-        <button id="btnCloseCouncil" class="iconBtn">✕</button>
-      </div>
-      <pre id="councilText" class="terminal mono">Loading…</pre>
-      <div class="subtle">Source: Backend (/council/last)</div>
-    </div>
-  </div>
 
   <!-- Top bar -->
   <header class="topbar">
@@ -64,19 +66,21 @@
 
   <main class="wrap">
 
+    <!-- World Time -->
     <section class="card">
       <h2>World Time</h2>
       <div class="ticker">
-        <div id="timeTrack" class="mono track">Loading…</div>
+        <div id="timeTrack" class="mono tickerText">Loading…</div>
       </div>
       <div class="subtle">Source: Device timezones</div>
     </section>
 
-    <section class="card globeCard">
-      <canvas id="globeCanvas"></canvas>
+    <!-- ✅ Real map -->
+    <section class="card mapCard">
+      <div id="map" class="map"></div>
       <div class="globeFooter">
-        <div id="globeStatus">Map loading…</div>
-        <div class="hint">Day/Night overlay uses device time (no external API).</div>
+        <div id="mapStatus">Map loading…</div>
+        <div class="hint">Map: OpenStreetMap (no API key). Night band uses device UTC (approx).</div>
       </div>
     </section>
 
@@ -89,7 +93,7 @@
     <section class="card">
       <h2>News</h2>
       <div class="ticker">
-        <div id="newsTrack" class="mono track">Loading…</div>
+        <div id="newsTrack" class="mono tickerText">Loading…</div>
       </div>
       <div class="subtle">Source: Backend (/tools/news)</div>
     </section>
@@ -100,13 +104,24 @@
         <input id="fileInput" type="file" />
         <button id="uploadBtn" class="btn">Upload</button>
       </div>
-      <div id="filesList" class="mono">No files yet</div>
+      <div id="filesList" class="mono filesBox">Loading…</div>
       <div class="subtle">Source: Backend (/files)</div>
+    </section>
+
+    <!-- ✅ Council log section (hidden until drawer button is clicked) -->
+    <section id="councilCard" class="card hidden">
+      <h2>Council Log</h2>
+      <div class="subtle">Source: Backend (/council/last)</div>
+      <pre id="councilLog" class="terminal"></pre>
+      <div class="row">
+        <button id="btnRefreshCouncilLog" class="btn">Refresh council log</button>
+        <button id="btnClearCouncilLog" class="btn subtleBtn">Clear</button>
+      </div>
     </section>
 
     <section class="card">
       <h2>Terminal</h2>
-      <pre id="terminal" class="terminal mono"></pre>
+      <pre id="terminal" class="terminal"></pre>
 
       <div class="promptRow">
         <input id="prompt" class="prompt" placeholder="Type a message…" />
@@ -115,6 +130,13 @@
     </section>
 
   </main>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
 
   <script src="./app.js"></script>
 </body>
