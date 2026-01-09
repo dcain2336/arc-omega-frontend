@@ -50,7 +50,6 @@ const weatherText = document.getElementById("weatherText");
 const newsTrack = document.getElementById("newsTrack");
 const timeTrack = document.getElementById("timeTrack");
 
-const newsTrack = document.getElementById("newsTrack");
 const threatBoard = document.getElementById("threatBoard");
 const timeFooter = document.getElementById("timeFooter");
 const newsFooter = document.getElementById("newsFooter");
