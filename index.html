@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ARC OMEGA</title>
+
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -16,35 +17,32 @@
     </div>
 
     <div class="drawerBody">
-      <div class="drawerSectionTitle">System</div>
+
+      <div class="drawerSectionTitle">Quick actions</div>
       <button id="btnRefreshBackend" class="btn">Refresh backend</button>
       <button id="btnRefreshWeather" class="btn">Refresh weather</button>
       <button id="btnRefreshNews" class="btn">Refresh news</button>
 
-      <div class="divider"></div>
-
       <div class="drawerSectionTitle">Files</div>
-      <div class="subtle mono">Upload → stored in Mongo/GridFS</div>
-
-      <input id="fileInput" type="file" class="fileInput" />
+      <div class="subtle">Upload → stored in Mongo/GridFS</div>
+      <input id="fileInput" class="fileInput" type="file" />
       <button id="uploadBtn" class="btn">Upload</button>
-
-      <div class="subtle mono" style="margin-top:10px;">Stored files</div>
+      <div class="subtle" style="margin-top:8px;">Stored files</div>
       <div id="filesList" class="filesList mono">Loading…</div>
 
-      <div class="divider"></div>
-
       <div class="drawerSectionTitle">Council</div>
-      <button id="btnCouncilLog" class="btn">Open council log</button>
-      <div id="councilLogBox" class="councilLog mono hidden"></div>
+      <button id="btnOpenCouncilLog" class="btn">Open council log</button>
+      <div id="councilStatus" class="subtle mono" style="margin-top:8px;">No council session loaded yet.</div>
+      <div id="councilLog" class="councilLog mono" style="display:none;"></div>
 
-      <div class="divider"></div>
-
+      <div class="drawerSectionTitle">Privacy</div>
       <button id="btnBlackout" class="btn danger">Blackout</button>
     </div>
   </div>
 
   <div id="drawerOverlay" class="overlay hidden"></div>
+
+  <!-- Blackout -->
   <div id="blackout" class="blackout hidden"></div>
 
   <!-- Top bar -->
@@ -65,12 +63,24 @@
   </header>
 
   <main class="wrap">
-    <section class="card globeCard">
-      <canvas id="globeCanvas"></canvas>
-      <div class="globeFooter">
-        <div id="globeStatus">Map loading…</div>
-        <div class="hint">Day/Night shading uses device time.</div>
+
+    <section class="card">
+      <h2>World Time</h2>
+      <div class="ticker">
+        <div id="timeTrack" class="mono">Loading…</div>
       </div>
+      <div class="subtle">Source: Device timezones</div>
+    </section>
+
+    <section class="card mapCard">
+      <h2>Local Map</h2>
+      <div class="mapFrame">
+        <img id="geoMapImg" alt="Map" />
+        <div id="nightOverlay" class="nightOverlay"></div>
+        <div id="mapPin" class="mapPin"></div>
+      </div>
+      <div class="subtle mono" id="mapStatus">Map loading…</div>
+      <div class="hint">Map uses browser geolocation (no uploaded world map). Night overlay is local day/night.</div>
     </section>
 
     <section class="card">
@@ -82,16 +92,9 @@
     <section class="card">
       <h2>News</h2>
       <div class="ticker">
-        <div id="newsTrack" class="mono tickerTrack">Loading…</div>
+        <div id="newsTrack" class="mono">Loading…</div>
       </div>
       <div class="subtle">Source: Backend (/tools/news)</div>
-    </section>
-
-    <section class="card">
-      <h2>World Time</h2>
-      <div class="ticker">
-        <div id="timeTrack" class="mono tickerTrack">Loading…</div>
-      </div>
     </section>
 
     <section class="card">
@@ -103,6 +106,7 @@
         <button id="sendBtn" class="btn">Send</button>
       </div>
     </section>
+
   </main>
 
   <script src="./app.js"></script>
