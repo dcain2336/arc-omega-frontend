@@ -50,6 +50,12 @@ const weatherText = document.getElementById("weatherText");
 const newsTrack = document.getElementById("newsTrack");
 const timeTrack = document.getElementById("timeTrack");
 
+const newsTrack = document.getElementById("newsTrack");
+const threatBoard = document.getElementById("threatBoard");
+const timeFooter = document.getElementById("timeFooter");
+const newsFooter = document.getElementById("newsFooter");
+
+
 const fileInput = document.getElementById("fileInput");
 const uploadBtn = document.getElementById("uploadBtn");
 const filesList = document.getElementById("filesList");
@@ -77,7 +83,35 @@ const btnRefreshNews = document.getElementById("btnRefreshNews");
 const btnRefreshServices = document.getElementById("btnRefreshServices");
 const servicesBox = document.getElementById("servicesBox");
 
+const toolsCatalog = document.getElementById("toolsCatalog");
+const btnRefreshMissions = document.getElementById("btnRefreshMissions");
+const missionsBox = document.getElementById("missionsBox");
+const arcLogo = document.getElementById("arcLogo");
+
+const btnRefreshTools = document.getElementById("btnRefreshTools");
+const toolsStatus = document.getElementById("toolsStatus");
+const toolTavilyQ = document.getElementById("toolTavilyQ");
+const btnRunTavily = document.getElementById("btnRunTavily");
+const toolWolframQ = document.getElementById("toolWolframQ");
+const btnRunWolfram = document.getElementById("btnRunWolfram");
+const toolTomTomQ = document.getElementById("toolTomTomQ");
+const btnRunTomTom = document.getElementById("btnRunTomTom");
+const toolRagieQ = document.getElementById("toolRagieQ");
+const btnRunRagie = document.getElementById("btnRunRagie");
+const toolPath = document.getElementById("toolPath");
+const toolBody = document.getElementById("toolBody");
+const btnRunCustomTool = document.getElementById("btnRunCustomTool");
+
+
 if (apiUrlText) apiUrlText.textContent = ACTIVE_API_BASE;
+
+
+function setArcState(state) {
+  if (!arcLogo) return;
+  arcLogo.classList.remove("state-blue","state-cyan","state-purple","state-red","state-green","state-orange");
+  arcLogo.classList.add(`state-${state}`);
+}
+
 
 function log(line) {
   if (!terminal) return;
@@ -105,6 +139,45 @@ async function fetchWithFailover(path, opts) {
   throw lastErr || new Error("No backends available");
 }
 
+
+async function runToolCall(defn, inputValue, saveOutput=false){
+  const method = defn.method || "GET";
+  let path = defn.path;
+  let options = { method, headers: {"Content-Type":"application/json"} };
+  if(defn.input === "query"){
+    const q = encodeURIComponent(inputValue || "");
+    if(path.includes("?")) path = path + "&q=" + q;
+    else path = path + "?q=" + q;
+  } else if(defn.input === "json"){
+    options.body = inputValue || "{}";
+  } else if(defn.input === "query_body"){
+    options.body = JSON.stringify({query: inputValue || ""});
+  } else if(defn.input === "query"){
+    // handled above
+  } else if(defn.input === "none"){
+    // no-op
+  } else {
+    // default to POST body query
+    if(method.toUpperCase() !== "GET"){
+      options.body = JSON.stringify({query: inputValue || ""});
+    }
+  }
+
+  const res = await fetchWithFailover(path, options);
+  const out = await res.json().catch(()=>({ok:false,error:"non-json response"}));
+  logJson(out);
+
+  if(saveOutput){
+    try{
+      const payload = { filename: `${defn.id}_${Date.now()}.txt`, content: JSON.stringify(out, null, 2) };
+      const r2 = await fetchWithFailover("/files/generate/text", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
+      const o2 = await r2.json();
+      logJson({saved:true, file:o2});
+    }catch(e){
+      logLine("[tools] save failed: " + (e?.message || e));
+    }
+  }
+}
 async function apiGet(path) {
   const r = await fetchWithFailover(path, { method: "GET" });
   const txt = await r.text();
@@ -298,6 +371,21 @@ refreshWorldTime();
 setInterval(refreshWorldTime, 1000);
 
 /* News ticker */
+async function refreshThreatBoard() {
+  if (!threatTrack) return;
+  try {
+    setArcState("cyan");
+    const j = await apiGet(`/tools/threat_board?limit=25`);
+    const items = (j.items || []).slice(0, 18);
+    const line = items.map(x => `${x.title}`).join(" • ");
+    threatTrack.textContent = line || "Threat board unavailable";
+    setArcState(line ? "green" : "red");
+  } catch (e) {
+    threatTrack.textContent = "Threat board unavailable";
+    setArcState("red");
+  }
+}
+
 async function refreshNews() {
   try {
     const data = await apiGet("/tools/news");
@@ -313,7 +401,7 @@ refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
 /* Files list + upload */
-async function refreshFilesList() {
+async async function refreshFilesList() {
   if (!filesList) return;
   try {
     const data = await apiGet("/files");
@@ -328,7 +416,11 @@ async function refreshFilesList() {
     }
     filesList.innerHTML = files.map((f) => {
       const name = (f.name || "file").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      return `• <a href="${API_BASE}/files/${f.id}" target="_blank" rel="noopener noreferrer">${name}</a> (${f.size} bytes)`;
+      return `• <a href="${API_BASE}/files/${f.id}" target="_blank" rel="noopener noreferrer">${name}</a>
+  <span class="subtle">(${f.size} bytes)</span>
+  <button class="miniBtn" data-act="extract" data-id="${f.id}">Extract</button>
+  <button class="miniBtn" data-act="analyze" data-id="${f.id}">Analyze</button>
+  <button class="miniBtn" data-act="edit" data-id="${f.id}">Edit</button>`;
     }).join("<br/>");
   } catch {
     filesList.textContent = "Files unavailable";
@@ -363,6 +455,36 @@ uploadBtn?.addEventListener("click", async () => {
 });
 
 refreshFilesList();
+
+// File action buttons (extract/analyze/edit)
+if (filesList) {
+  filesList.addEventListener("click", async (ev) => {
+    const btn = ev.target?.closest?.("button[data-act]");
+    if (!btn) return;
+    ev.preventDefault();
+    const act = btn.getAttribute("data-act");
+    const id = btn.getAttribute("data-id");
+    try {
+      if (act === "extract") {
+        const r = await apiGet(`/files/${id}/extract`);
+        logToTerminal(`[FILE] extract ${id}:\n` + (r.text || JSON.stringify(r, null, 2)));
+      } else if (act === "analyze") {
+        const prompt = window.prompt("Analyze prompt:", "Summarize key points.");
+        if (!prompt) return;
+        const r = await apiPost(`/files/${id}/analyze`, { prompt });
+        logToTerminal(`[FILE] analyze ${id}:\n` + (r.text || JSON.stringify(r, null, 2)));
+      } else if (act === "edit") {
+        const instruction = window.prompt("Edit instruction:", "Rewrite for clarity.");
+        if (!instruction) return;
+        const r = await apiPost(`/files/${id}/edit`, { instruction });
+        logToTerminal(`[FILE] edit ${id}:\n` + JSON.stringify(r, null, 2));
+        refreshFilesList();
+      }
+    } catch (e) {
+      logToTerminal("[FILE] action failed: " + (e?.message || e));
+    }
+  });
+}
 setInterval(refreshFilesList, 60 * 1000);
 
 /* Council log (drawer) */
@@ -539,6 +661,17 @@ if (btnVoiceHold) {
 const btnVoiceStart = document.getElementById("btnVoiceStart");
 const chkWakePhrase = document.getElementById("chkWakePhrase");
 const btnVoiceDownloadLog = document.getElementById("btnVoiceDownloadLog");
+
+// Briefing/Emergency
+const btnMorningBrief = document.getElementById("btnMorningBrief");
+const btnSendBrief = document.getElementById("btnSendBrief");
+const briefStatus = document.getElementById("briefStatus");
+const btnEmergency = document.getElementById("btnEmergency");
+const btnEmergencyToggle = document.getElementById("btnEmergencyToggle");
+const btnEmergencyClear = document.getElementById("btnEmergencyClear");
+const emergencyStatus = document.getElementById("emergencyStatus");
+const councilViz = document.getElementById("councilViz");
+const threatTrack = document.getElementById("threatTrack");
 
 let convoEnabled = false;
 let convoSessionId = "voice_default";
@@ -762,3 +895,368 @@ if (btnVoiceDownloadLog) {
   });
 }
 
+
+
+// ---------------- Map (Leaflet + Terminator) ----------------
+async function initLeafletMap() {
+  const mapEl = document.getElementById("map");
+  if (!mapEl || typeof L === "undefined") return;
+
+  const map = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([34.75, -77.42], 10); // Jacksonville-ish default
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+  const marker = L.marker([34.75, -77.42]).addTo(map);
+  marker.bindPopup("ARC location").openPopup();
+
+  // Day/night terminator layer (best effort)
+  let termLayer = null;
+  function updateTerminator() {
+    try {
+      if (termLayer) map.removeLayer(termLayer);
+      termLayer = L.terminator();
+      termLayer.setStyle({ opacity: 0.35, fillOpacity: 0.25 });
+      termLayer.addTo(map);
+    } catch (e) {
+      // ignore
+    }
+  }
+  updateTerminator();
+  setInterval(updateTerminator, 60 * 1000);
+
+  // Use browser geolocation
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        marker.setLatLng([lat, lon]);
+        marker.bindPopup(`You: ${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+        map.setView([lat, lon], 12);
+      },
+      (err) => {
+        logToTerminal("[MAP] Geolocation denied/unavailable: " + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  }
+}
+
+// Initialize map after DOM ready
+window.addEventListener("load", () => {
+  initLeafletMap();
+});
+
+
+
+async function refreshTools() {
+  if (!toolsStatus) return;
+  try {
+    const caps = await apiGet("/capabilities");
+    const providers = caps.providers || {};
+    const tools = caps.tools || {};
+    const lines = [];
+    lines.push("== Providers ==");
+    for (const [k,v] of Object.entries(providers)) lines.push(`${k}: ${v ? "OK" : "OFF"}`);
+    lines.push("");
+    lines.push("== Tools ==");
+    for (const [k,v] of Object.entries(tools)) lines.push(`${k}: ${v ? "OK" : "OFF"}`);
+    toolsStatus.textContent = lines.join("\n");
+  } catch (e) {
+    toolsStatus.textContent = "Tools unavailable";
+  }
+}
+
+async function runToolGet(path) {
+  setArcState("cyan");
+  try {
+    const data = await apiGet(path);
+    log(`[TOOL] GET ${path}`);
+    log(JSON.stringify(data, null, 2));
+    setArcState("green");
+    return data;
+  } catch (e) {
+    log(`[TOOL] error: ${e}`);
+    setArcState("red");
+    throw e;
+  }
+}
+
+async function runToolPost(path, bodyObj) {
+  setArcState("cyan");
+  try {
+    const data = await apiPost(path, bodyObj);
+    log(`[TOOL] POST ${path}`);
+    log(JSON.stringify(data, null, 2));
+    setArcState("green");
+    return data;
+  } catch (e) {
+    log(`[TOOL] error: ${e}`);
+    setArcState("red");
+    throw e;
+  }
+}
+
+
+setArcState("blue");
+refreshTools();
+
+
+// -------------------- Briefing / Emergency / Council Viz --------------------
+async function getGeo() {
+  return await new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 }
+    );
+  });
+}
+
+async function refreshEmergencyStatus() {
+  if (!emergencyStatus) return;
+  try {
+    const j = await apiGet(`/emergency/status?session_id=${encodeURIComponent(SESSION_ID)}`);
+    emergencyStatus.textContent = j.active ? "ACTIVE" : "Inactive";
+    if (j.active) setArcState("red");
+  } catch {}
+}
+
+if (btnEmergency) {
+  btnEmergency.addEventListener("click", async () => {
+    // open drawer and highlight emergency section
+    openDrawer();
+    try { btnEmergencyToggle?.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
+  });
+}
+
+if (btnEmergencyToggle) {
+  btnEmergencyToggle.addEventListener("click", async () => {
+    try {
+      setArcState("orange");
+      const reason = prompt("Emergency reason (optional):") || "";
+      const j = await apiPost("/emergency/activate", { session_id: SESSION_ID, reason });
+      if (j.ok) {
+        emergencyStatus.textContent = "ACTIVE";
+        logToTerminal("[EMERGENCY] Activated");
+        setArcState("red");
+      } else {
+        logToTerminal("[EMERGENCY] Failed: " + (j.error || "unknown"));
+        setArcState("red");
+      }
+    } catch (e) {
+      logToTerminal("[EMERGENCY] Error: " + (e?.message || e));
+      setArcState("red");
+    }
+  });
+}
+
+if (btnEmergencyClear) {
+  btnEmergencyClear.addEventListener("click", async () => {
+    try {
+      setArcState("orange");
+      const j = await apiPost("/emergency/clear", { session_id: SESSION_ID });
+      if (j.ok) {
+        emergencyStatus.textContent = "Inactive";
+        logToTerminal("[EMERGENCY] All clear");
+        setArcState("green");
+      } else {
+        logToTerminal("[EMERGENCY] Failed: " + (j.error || "unknown"));
+        setArcState("red");
+      }
+    } catch (e) {
+      logToTerminal("[EMERGENCY] Error: " + (e?.message || e));
+      setArcState("red");
+    }
+  });
+}
+
+if (btnMorningBrief) {
+  btnMorningBrief.addEventListener("click", async () => {
+    try {
+      setArcState("cyan");
+      briefStatus.textContent = "Generating…";
+      const geo = await getGeo();
+      const payload = { session_id: SESSION_ID, limit: 15 };
+      if (geo) { payload.lat = geo.lat; payload.lon = geo.lon; }
+      const j = await apiPost("/briefing/morning", payload);
+      const lines = [];
+      if (j.weather && j.weather.ok) lines.push(`Weather: ${j.weather.temp_f}°F wind ${j.weather.wind || ""}`);
+      const hb = (j.headlines?.headlines || []).slice(0, 8);
+      if (hb.length) lines.push("Headlines: " + hb.join(" | "));
+      const tb = (j.threat_board?.items || []).slice(0, 8);
+      if (tb.length) lines.push("Threat board: " + tb.map(x => x.title).join(" | "));
+      const brief = lines.join("\n");
+      logToTerminal("\n[MORNING BRIEF]\n" + brief + "\n");
+      window.__lastBriefText = brief;
+      briefStatus.textContent = "Ready";
+      setArcState("green");
+    } catch (e) {
+      briefStatus.textContent = "Error";
+      logToTerminal("[BRIEF] Error: " + (e?.message || e));
+      setArcState("red");
+    }
+  });
+}
+
+if (btnSendBrief) {
+  btnSendBrief.addEventListener("click", async () => {
+    const text = (window.__lastBriefText || "").trim();
+    if (!text) {
+      alert("Generate a brief first.");
+      return;
+    }
+    try {
+      setArcState("orange");
+      briefStatus.textContent = "Sending…";
+      const j = await apiPost("/briefing/send", { session_id: SESSION_ID, text, via: ["discord","email","sms"] });
+      logToTerminal("[BRIEF] Send results: " + JSON.stringify(j.results || j, null, 2));
+      briefStatus.textContent = "Sent (check logs)";
+      setArcState("green");
+    } catch (e) {
+      briefStatus.textContent = "Send failed";
+      logToTerminal("[BRIEF] Send error: " + (e?.message || e));
+      setArcState("red");
+    }
+  });
+}
+
+async function refreshCouncilViz() {
+  if (!councilViz) return;
+  try {
+    const j = await apiGet(`/council/state?session_id=${encodeURIComponent(SESSION_ID)}`);
+    const state = (j.state || "blue").toLowerCase();
+    councilViz.classList.remove("blue","cyan","purple","red","green","orange");
+    councilViz.classList.add(state);
+  } catch {}
+}
+
+refreshCouncilViz();
+refreshEmergencyStatus();
+setInterval(refreshCouncilViz, 4000);
+setInterval(refreshEmergencyStatus, 8000);
+async async function refreshToolsCatalog(){
+  if(!toolsCatalog) return;
+  toolsCatalog.innerHTML = "<div class='subtle mono'>Loading tools…</div>";
+  try{
+    const r = await fetchWithFailover("/tools/registry");
+    const j = await r.json();
+    const tools = (j && j.tools) || [];
+    toolsCatalog.innerHTML = "";
+    tools.forEach(t=>{
+      const row = document.createElement("div");
+      row.className = "toolRow";
+      const label = document.createElement("div");
+      label.className = "subtle mono";
+      label.style.minWidth="140px";
+      label.textContent = t.label + (t.available ? "" : " (not configured)");
+      const inp = document.createElement("input");
+      inp.className="fileInput";
+      inp.placeholder = (t.input==="query") ? "enter query" : (t.input==="json" ? "enter JSON body" : "");
+      inp.style.display = (t.input==="none") ? "none" : "block";
+      const save = document.createElement("input");
+      save.type="checkbox";
+      save.title="Save output as file";
+      const run = document.createElement("button");
+      run.className="btn toolMini";
+      run.textContent="Run";
+      run.disabled = !t.available;
+      run.onclick = ()=>runToolCall(t, inp.value, save.checked);
+      row.appendChild(label);
+      row.appendChild(inp);
+      row.appendChild(run);
+      row.appendChild(save);
+      toolsCatalog.appendChild(row);
+    });
+  }catch(e){
+    toolsCatalog.innerHTML = "<div class='subtle mono'>Failed to load tools</div>";
+    logLine("[tools] catalog error: " + (e?.message || e));
+  }
+}
+
+async async function refreshMissions(){
+  if(!missionsBox) return;
+  missionsBox.innerHTML = "<div class='subtle mono'>Loading missions…</div>";
+  try{
+    const r = await fetchWithFailover("/missions/list");
+    const j = await r.json();
+    const missions = (j && j.missions) || [];
+    missionsBox.innerHTML = "";
+    missions.forEach(m=>{
+      const row = document.createElement("div");
+      row.className="toolRow";
+      const label = document.createElement("div");
+      label.className="subtle mono";
+      label.style.minWidth="180px";
+      label.textContent = m.label;
+      const run = document.createElement("button");
+      run.className="btn toolMini";
+      run.textContent="Run";
+      run.onclick = async ()=>{
+        const r2 = await fetchWithFailover("/missions/run", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({id:m.id})});
+        const out = await r2.json();
+        logJson(out);
+      };
+      row.appendChild(label);
+      row.appendChild(run);
+      missionsBox.appendChild(row);
+    });
+  }catch(e){
+    missionsBox.innerHTML = "<div class='subtle mono'>Failed to load missions</div>";
+    logLine("[missions] error: " + (e?.message || e));
+  }
+
+  if(btnRefreshMissions) btnRefreshMissions.addEventListener('click', refreshMissions);
+  refreshToolsCatalog();
+  refreshMissions();
+}
+
+
+
+
+// ---------------- News + Threat Board ----------------
+async function updateBreakingNews() {
+  try {
+    const r = await apiGet("/tools/news");
+    const headlines = (r?.headlines?.headlines) || (r?.headlines) || [];
+    const items = Array.isArray(headlines) ? headlines : (headlines?.headlines || []);
+    const texts = items.map(h => (typeof h === "string" ? h : (h.title || h.headline || ""))).filter(Boolean).slice(0, 12);
+    const line = texts.length ? texts.join("  •  ") : "No headlines available.";
+    if (newsTrack) newsTrack.textContent = line;
+    if (newsFooter) newsFooter.textContent = line;
+  } catch (e) {
+    const msg = "News unavailable (backend offline).";
+    if (newsTrack) newsTrack.textContent = msg;
+    if (newsFooter) newsFooter.textContent = msg;
+  }
+}
+
+async function updateThreatBoard() {
+  try {
+    const r = await apiGet("/tools/threat_board");
+    const items = r?.items || [];
+    const lines = items.slice(0, 25).map(it => {
+      const src = it.source ? `[${it.source}] ` : "";
+      return `${src}${it.title || it.headline || it.text || ""}`.trim();
+    }).filter(Boolean);
+    if (threatBoard) threatBoard.textContent = lines.length ? lines.join("\n\n") : "No items.";
+  } catch (e) {
+    if (threatBoard) threatBoard.textContent = "Threat board unavailable (backend offline).";
+  }
+}
+
+function updateFooterTime() {
+  if (!timeFooter) return;
+  // reuse the world time values if available
+  timeFooter.textContent = timeTrack ? timeTrack.textContent : "";
+}
+
+// Schedule updates
+setInterval(updateBreakingNews, 60 * 1000);
+setInterval(updateThreatBoard, 5 * 60 * 1000);
+setInterval(updateFooterTime, 15 * 1000);
+
+// Initial
+updateBreakingNews();
+updateThreatBoard();
+updateFooterTime();

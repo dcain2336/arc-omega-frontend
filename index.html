@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ARC OMEGA</title>
 
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -28,7 +29,50 @@
       <button id="btnRefreshServices" class="btn">Refresh services</button>
       <div id="servicesBox" class="subtle mono" style="margin-top:6px; white-space:pre-wrap;">Loading…</div>
 
-      <div class="drawerSectionTitle">Voice</div>
+      
+      <div class="drawerSectionTitle">Tools</div>
+      <div class="subtle">Run tools via the backend (auto-failover)</div>
+      <button id="btnRefreshTools" class="btn">Refresh tools</button>
+
+      <div class="toolBox" style="margin-top:8px;">
+        <div class="subtle mono">Tavily Web Search</div>
+        <input id="toolTavilyQ" class="fileInput" type="text" placeholder="search query" />
+        <button id="btnRunTavily" class="btn">Search</button>
+
+        <div style="height:10px;"></div>
+        <div class="subtle mono">Wolfram</div>
+        <input id="toolWolframQ" class="fileInput" type="text" placeholder="e.g., 47*19 or distance Jacksonville to Raleigh" />
+        <button id="btnRunWolfram" class="btn">Compute</button>
+
+        <div style="height:10px;"></div>
+        <div class="subtle mono">TomTom Search</div>
+        <input id="toolTomTomQ" class="fileInput" type="text" placeholder="e.g., coffee near me, 123 main st" />
+        <button id="btnRunTomTom" class="btn">Search Places</button>
+
+        <div style="height:10px;"></div>
+        <div class="subtle mono">RAGIE Retrieve</div>
+        <input id="toolRagieQ" class="fileInput" type="text" placeholder="question to retrieve docs for" />
+        <button id="btnRunRagie" class="btn">Retrieve</button>
+
+        <div style="height:10px;"></div>
+        <div class="subtle mono">Custom Tool Call</div>
+        <input id="toolPath" class="fileInput" type="text" placeholder="/tools/news or /files etc." />
+        <textarea id="toolBody" class="fileInput mono" rows="4" placeholder='JSON body (optional)'></textarea>
+        <button id="btnRunCustomTool" class="btn">Run</button>
+
+        <div id="toolsStatus" class="subtle mono" style="margin-top:8px; white-space:pre-wrap;">Loading…</div>
+      </div>
+
+      <div class="drawerSectionTitle">Tools Catalog</div>
+      <div class="subtle">Auto-built from backend /tools/registry. Run a tool and optionally save output as a file.</div>
+      <div id="toolsCatalog" class="toolCatalog"></div>
+
+      <div class="drawerSectionTitle">Missions</div>
+      <div class="subtle">Pre-planned safe workflows (allowlisted).</div>
+      <button id="btnRefreshMissions" class="btn">Refresh missions</button>
+      <div id="missionsBox" class="toolCatalog" style="margin-top:8px;"></div>
+
+<div class="drawerSectionTitle">Voice</div>
       <div class="subtle">Push-to-talk (STT → ARC → TTS)</div>
       <button id="btnVoiceHold" class="btn">Hold to Talk</button>
       <button id="btnVoiceStart" class="btn">Start Conversation</button>
@@ -37,6 +81,30 @@
       <div id="voiceStatus" class="subtle mono" style="margin-top:6px;">Idle</div>
       <audio id="voicePlayer" controls style="width:100%; margin-top:6px; display:none;"></audio>
 
+
+      
+      <div class="drawerSectionTitle">Briefing</div>
+      <div class="subtle">Morning brief + alerts (admin-gated send)</div>
+      <button id="btnMorningBrief" class="btn">Generate morning brief</button>
+      <button id="btnSendBrief" class="btn">Send brief (email/text/discord)</button>
+      <div id="briefStatus" class="subtle mono" style="margin-top:6px;">—</div>
+
+      <div class="drawerSectionTitle">Emergency</div>
+      <div class="subtle">Triage mode (bypasses council)</div>
+      <button id="btnEmergencyToggle" class="btn danger">Activate emergency</button>
+      <button id="btnEmergencyClear" class="btn">All clear</button>
+      <div id="emergencyStatus" class="subtle mono" style="margin-top:6px;">Inactive</div>
+
+      <div class="drawerSectionTitle">Council Visualization</div>
+      <div id="councilViz" class="councilViz">
+        <div class="node" data-node="security"></div>
+        <div class="node" data-node="tools"></div>
+        <div class="node" data-node="rag"></div>
+        <div class="node" data-node="ops"></div>
+        <div class="node" data-node="polish"></div>
+        <div class="node" data-node="final"></div>
+        <div class="lines"></div>
+      </div>
 
       <div class="drawerSectionTitle">Files</div>
       <div class="subtle">Upload → stored in Mongo/GridFS</div>
@@ -63,8 +131,10 @@
   <!-- Top bar -->
   <header class="topbar">
     <button id="btnMenu" class="iconBtn">☰</button>
+    <button id="btnEmergency" class="iconBtn danger" title="Emergency Mode">⛑</button>
 
     <div class="topbarMid">
+      <img id="arcLogo" class="arcLogo state-blue" src="./assets/arc_reactor.jpeg" alt="ARC" />
       <div class="apiLine">
         API: <span id="apiUrlText"></span>
       </div>
@@ -99,9 +169,35 @@
     </section>
 
     <section class="card">
+      <h2>Map</h2>
+      <div id="map" style="height:260px; border-radius:12px; overflow:hidden;"></div>
+      <div class="subtle">Day/night shading + your location (browser geolocation)</div>
+    </section>
+
+    <section class="card">
       <h2>Weather</h2>
       <div id="weatherText" class="mono">Loading…</div>
       <div class="subtle">Source: Open-Meteo (browser geolocation)</div>
+    </section>
+    <section class="card">
+      <h2>Breaking News</h2>
+      <div class="ticker">
+        <div id="newsTrack" class="mono">Loading…</div>
+      </div>
+      <div class="subtle">Source: RSS fallback / configured APIs</div>
+    </section>
+
+    <section class="card">
+      <h2>Threat Board</h2>
+      <div id="threatBoard" class="mono threatBoard">Loading…</div>
+      <div class="subtle">Defensive feeds (CISA/NOAA + headlines)</div>
+    </section>
+
+
+    <section class="card">
+      <h2>Threat Board</h2>
+      <div class="ticker"><div id="threatTrack" class="mono">Loading…</div></div>
+      <div class="subtle">Source: RSS aggregation (CISA + Google News + NHC)</div>
     </section>
 
     <section class="card">
@@ -124,6 +220,20 @@
 
   </main>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-terminator@1.0.0/L.Terminator.js"></script>
   <script src="./app.js"></script>
+
+  <footer class="footerTicks">
+    <div class="footerTick">
+      <div class="footerLabel">TIME (24h)</div>
+      <div id="timeFooter" class="mono"></div>
+    </div>
+    <div class="footerTick">
+      <div class="footerLabel">NEWS</div>
+      <div id="newsFooter" class="mono"></div>
+    </div>
+  </footer>
+
 </body>
 </html>
