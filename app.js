@@ -1,376 +1,637 @@
-// frontend/app.js
-const API_BASE = "https://arc-omega-backend.onrender.com";
+# api.py
+from __future__ import annotations
 
-// session id (persist per browser)
-const SESSION_KEY = "arc_session_id";
-function getSessionId() {
-  let s = localStorage.getItem(SESSION_KEY);
-  if (!s) {
-    s = "s_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
-    localStorage.setItem(SESSION_KEY, s);
-  }
-  return s;
-}
-const SESSION_ID = getSessionId();
+import os
+import time
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-// Elements
-const apiUrlText = document.getElementById("apiUrlText");
-const upstreamText = document.getElementById("upstreamText");
-const upstreamPill = document.getElementById("upstreamPill");
+import requests
+from fastapi import FastAPI, Request, UploadFile, File, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
-const terminal = document.getElementById("terminal");
-const promptEl = document.getElementById("prompt");
-const sendBtn = document.getElementById("sendBtn");
+# Mongo / GridFS
+from pymongo import MongoClient
+import gridfs
+from bson import ObjectId
 
-const weatherText = document.getElementById("weatherText");
-const newsTrack = document.getElementById("newsTrack");
-const timeTrack = document.getElementById("timeTrack");
+from lib.secrets import admin_ok, bootstrap_secrets, resolve_presence, is_present
+from lib.model_catalog import get_models
+from lib.providers import PROVIDER_CALLERS, ProviderResult
 
-const fileInput = document.getElementById("fileInput");
-const uploadBtn = document.getElementById("uploadBtn");
-const filesList = document.getElementById("filesList");
+from lib.memory_mongo import MemoryStore
+from lib.tools_weather import tool_weather
+from lib.tools_search import tool_web_search
+from lib.tools_vision import tool_vision_analyze_bytes
 
-const btnOpenCouncilLog = document.getElementById("btnOpenCouncilLog");
-const councilLog = document.getElementById("councilLog");
-const councilStatus = document.getElementById("councilStatus");
+APP_NAME = "arc-omega-backend"
 
-// Drawer / overlay / blackout
-const btnMenu = document.getElementById("btnMenu");
-const drawer = document.getElementById("drawer");
-const drawerOverlay = document.getElementById("drawerOverlay");
-const btnCloseDrawer = document.getElementById("btnCloseDrawer");
-const btnBlackout = document.getElementById("btnBlackout");
-const blackout = document.getElementById("blackout");
+app = FastAPI(title=APP_NAME)
 
-const btnRefreshBackend = document.getElementById("btnRefreshBackend");
-const btnRefreshWeather = document.getElementById("btnRefreshWeather");
-const btnRefreshNews = document.getElementById("btnRefreshNews");
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # tighten later
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-if (apiUrlText) apiUrlText.textContent = API_BASE;
+_last_tried: Dict[str, Any] = {"ts": None, "provider": None, "model": None, "error": None}
+_bootstrap_info: Dict[str, Any] = {}
 
-function log(line) {
-  if (!terminal) return;
-  terminal.textContent += `${line}\n`;
-  terminal.scrollTop = terminal.scrollHeight;
-}
+# Mongo globals
+_mongo: Optional[MongoClient] = None
+_db = None
+_fs: Optional[gridfs.GridFS] = None
 
-async function apiGet(path) {
-  const r = await fetch(`${API_BASE}${path}`, { method: "GET", cache: "no-store" });
-  const txt = await r.text();
-  let data;
-  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
-  if (!r.ok) throw new Error(`${r.status} ${txt}`);
-  return data;
-}
+# Memory store (Mongo-backed if MONGO_URI is set)
+_memory: Optional[MemoryStore] = None
 
-async function apiPost(path, body) {
-  const r = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-  const txt = await r.text();
-  let data;
-  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
-  if (!r.ok) throw new Error(`${r.status} ${txt}`);
-  return data;
-}
 
-/* Drawer + blackout */
-function openDrawer() {
-  drawer?.classList.add("open");
-  drawerOverlay?.classList.remove("hidden");
-}
-function closeDrawer() {
-  drawer?.classList.remove("open");
-  drawerOverlay?.classList.add("hidden");
-}
-btnMenu?.addEventListener("click", openDrawer);
-btnCloseDrawer?.addEventListener("click", closeDrawer);
-drawerOverlay?.addEventListener("click", closeDrawer);
+@app.on_event("startup")
+def _startup():
+    global _bootstrap_info, _mongo, _db, _fs, _memory
+    _bootstrap_info = bootstrap_secrets()
 
-btnBlackout?.addEventListener("click", () => blackout?.classList.remove("hidden"));
-blackout?.addEventListener("click", () => blackout?.classList.add("hidden"));
+    mongo_uri = (os.environ.get("MONGO_URI") or "").strip()
+    if mongo_uri:
+        _mongo = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+        db_name = os.getenv("MONGO_DB", "arc_omega")
+        _db = _mongo.get_database(db_name)
+        _fs = gridfs.GridFS(_db, collection="files")
+        _mongo.admin.command("ping")
+        _memory = MemoryStore(_db)
 
-btnRefreshBackend?.addEventListener("click", () => refreshBackendStatus(true));
-btnRefreshWeather?.addEventListener("click", refreshWeather);
-btnRefreshNews?.addEventListener("click", refreshNews);
 
-/* Backend status polling */
-let lastBackendRefresh = 0;
-async function refreshBackendStatus(force = false) {
-  const now = Date.now();
-  if (!force && now - lastBackendRefresh < 8000) return;
-  lastBackendRefresh = now;
+class QueryIn(BaseModel):
+    message: str = Field(..., example="Hello ARC — quick test.")
+    session_id: Optional[str] = Field(default="default", example="default")
+    provider: Optional[str] = Field(default="auto", example="auto")
+    model: Optional[str] = Field(default=None, example=None)
 
-  try {
-    const ping = await apiGet("/ping");
-    upstreamText.textContent = ping.ok ? "ok" : "down";
-    upstreamPill.classList.remove("bad");
-    upstreamPill.classList.add("ok");
-  } catch {
-    upstreamText.textContent = "down";
-    upstreamPill.classList.remove("ok");
-    upstreamPill.classList.add("bad");
-  }
-}
-refreshBackendStatus();
-setInterval(refreshBackendStatus, 12000);
+    debug: bool = Field(default=False, example=False)
+    force_council: bool = Field(default=False, example=False)
+    council_rounds: int = Field(default=2, ge=1, le=3, example=2)
 
-/* Send message */
-async function sendMessage() {
-  const msg = (promptEl?.value || "").trim();
-  if (!msg) return;
 
-  promptEl.value = "";
-  log(`> ${msg}`);
+@app.get("/")
+def root():
+    return {"ok": True, "app": APP_NAME, "ts": int(time.time() * 1000)}
 
-  try {
-    // IMPORTANT: include session_id so council log binds correctly
-    const out = await apiPost("/query", { message: msg, session_id: SESSION_ID });
-    if (!out.ok) {
-      log(`! error: ${out.error || "unknown"}`);
-      return;
-    }
-    log(out.text || "(no text)");
-  } catch (e) {
-    log(`send error: ${e.message || String(e)}`);
-  }
-}
-sendBtn?.addEventListener("click", sendMessage);
-promptEl?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendMessage();
-});
 
-/* Geolocation */
-function getPosition() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve(pos),
-      () => resolve(null),
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
-    );
-  });
-}
+@app.get("/ping")
+def ping():
+    return {"ok": True, "ts": int(time.time() * 1000)}
 
-/* Weather (UI only, map + tool router will also use backend when needed) */
-async function refreshWeather() {
-  try {
-    const pos = await getPosition();
-    if (!pos) {
-      weatherText.textContent = "Weather unavailable (no location / blocked)";
-      return;
-    }
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
 
-    const r = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`,
-      { cache: "no-store" }
-    );
-    const data = await r.json();
-    const cw = data.current_weather;
+@app.get("/last_tried")
+def last_tried():
+    return _last_tried
 
-    if (!cw) {
-      weatherText.textContent = "Weather unavailable";
-      return;
+
+@app.get("/keys")
+def keys():
+    return {"ok": True, "ts": int(time.time() * 1000), "keys": resolve_presence()}
+
+
+@app.get("/keys/admin")
+def keys_admin(request: Request):
+    if not admin_ok(request):
+        return {"ok": False, "error": "unauthorized"}
+    present = [k for k, v in resolve_presence().items() if v]
+    return {
+        "ok": True,
+        "ts": int(time.time() * 1000),
+        "present_key_names": sorted(present),
+        "bootstrap": _bootstrap_info,
     }
 
-    const tempF = (cw.temperature * 9 / 5) + 32;
-    weatherText.textContent = `Your area • ${tempF.toFixed(1)}°F • Wind ${cw.windspeed.toFixed(1)} mph`;
-  } catch {
-    weatherText.textContent = "Weather unavailable";
-  }
-}
-refreshWeather();
-setInterval(refreshWeather, 10 * 60 * 1000);
 
-/* World Time ticker */
-function buildWorldTimeLine() {
-  const zones = [
-    { name: "LOCAL", tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
-    { name: "ET", tz: "America/New_York" },
-    { name: "CT", tz: "America/Chicago" },
-    { name: "MT", tz: "America/Denver" },
-    { name: "PT", tz: "America/Los_Angeles" },
-    { name: "UTC", tz: "UTC" },
-    { name: "London", tz: "Europe/London" },
-    { name: "Paris", tz: "Europe/Paris" },
-    { name: "Dubai", tz: "Asia/Dubai" },
-    { name: "Manila", tz: "Asia/Manila" },
-    { name: "Guam", tz: "Pacific/Guam" },
-    { name: "Seoul", tz: "Asia/Seoul" },
-    { name: "Tokyo", tz: "Asia/Tokyo" },
-    { name: "Sydney", tz: "Australia/Sydney" },
-  ];
-
-  const now = new Date();
-  const pieces = zones.map((z) => {
-    const fmt = new Intl.DateTimeFormat([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-      timeZone: z.tz,
-    });
-    return `${z.name} ${fmt.format(now)}`;
-  });
-
-  return pieces.join("   •   ");
-}
-function refreshWorldTime() {
-  if (!timeTrack) return;
-  const line = buildWorldTimeLine();
-  timeTrack.textContent = line + "   •   " + line;
-}
-refreshWorldTime();
-setInterval(refreshWorldTime, 1000);
-
-/* News ticker */
-async function refreshNews() {
-  try {
-    const data = await apiGet("/tools/news");
-    const headlines = data?.headlines || [];
-    const clean = headlines.filter((h) => typeof h === "string" && h.trim().length);
-    const base = clean.length ? clean.join("   •   ") : "No headlines right now";
-    newsTrack.textContent = base + "   •   " + base;
-  } catch {
-    newsTrack.textContent = "News unavailable   •   News unavailable";
-  }
-}
-refreshNews();
-setInterval(refreshNews, 10 * 60 * 1000);
-
-/* Files list + upload */
-async function refreshFilesList() {
-  if (!filesList) return;
-  try {
-    const data = await apiGet("/files");
-    if (!data.ok) {
-      filesList.textContent = data.error || "Files unavailable";
-      return;
+def _provider_key_present(provider: str) -> bool:
+    provider = provider.lower().strip()
+    mapping = {
+        "openai": "OPENAI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "huggingface": "HF_TOKEN",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "perplexity": "PERPLEXITY_API_KEY",
     }
-    const files = data.files || [];
-    if (!files.length) {
-      filesList.textContent = "No files yet";
-      return;
+    key_name = mapping.get(provider)
+    if not key_name:
+        return False
+    return is_present(key_name)
+
+
+@app.get("/candidates")
+def candidates():
+    providers: Dict[str, Any] = {}
+    for p in ["openai", "openrouter", "groq", "huggingface", "anthropic", "gemini", "mistral", "perplexity"]:
+        providers[p] = {
+            "key_present": _provider_key_present(p),
+            "models": get_models(p),
+            "callable": p in PROVIDER_CALLERS,
+        }
+    return {"ok": True, "ts": int(time.time() * 1000), "providers": providers}
+
+
+# -----------------------------
+# Tools: News (server-side)
+# -----------------------------
+@app.get("/tools/news")
+def tools_news():
+    # 1) NewsData.io
+    nd_key = (os.environ.get("NEWSDATA_API_KEY") or os.environ.get("NEWSDATAIO_KEY") or "").strip()
+    if nd_key:
+        try:
+            url = "https://newsdata.io/api/1/news"
+            params = {"apikey": nd_key, "country": "us", "language": "en", "size": 12}
+            r = requests.get(url, params=params, timeout=12)
+            data = r.json()
+            results = data.get("results") or []
+            headlines = []
+            for a in results:
+                t = (a.get("title") or "").strip()
+                if t:
+                    headlines.append(t)
+            if not headlines:
+                headlines = ["No headlines right now"]
+            return {"ok": True, "headlines": headlines}
+        except Exception:
+            return {"ok": True, "headlines": ["News unavailable"]}
+
+    # 2) NewsAPI.org
+    key = (os.environ.get("NEWSAPI_KEY") or "").strip()
+    if key:
+        try:
+            url = "https://newsapi.org/v2/top-headlines"
+            params = {"country": "us", "pageSize": 12}
+            r = requests.get(url, params=params, headers={"X-Api-Key": key}, timeout=12)
+            data = r.json()
+            articles = data.get("articles") or []
+            headlines = []
+            for a in articles:
+                t = (a.get("title") or "").strip()
+                if t:
+                    headlines.append(t)
+            if not headlines:
+                headlines = ["No headlines right now"]
+            return {"ok": True, "headlines": headlines}
+        except Exception:
+            return {"ok": True, "headlines": ["News unavailable"]}
+
+    return {"ok": True, "headlines": ["News unavailable (missing NEWSDATA_API_KEY / NEWSAPI_KEY)"]}
+
+
+# -----------------------------
+# Tools: Weather (server-side)
+# -----------------------------
+@app.get("/tools/weather")
+def tools_weather(q: str = Query(default="Jacksonville, NC")):
+    return tool_weather(q)
+
+
+# -----------------------------
+# Files: Mongo GridFS primary
+# -----------------------------
+def _fs_ready() -> bool:
+    return _fs is not None and _db is not None
+
+
+@app.get("/files")
+def list_files():
+    if not _fs_ready():
+        return {"ok": False, "error": "Mongo/GridFS not configured (missing MONGO_URI?)"}
+
+    files = []
+    try:
+        for f in _db["files.files"].find().sort("uploadDate", -1).limit(50):
+            files.append(
+                {
+                    "id": str(f["_id"]),
+                    "name": f.get("filename") or "file",
+                    "size": int(f.get("length") or 0),
+                    "uploaded": f.get("uploadDate").isoformat() if f.get("uploadDate") else None,
+                    "contentType": f.get("contentType") or f.get("content_type"),
+                }
+            )
+        return {"ok": True, "files": files}
+    except Exception as e:
+        return {"ok": False, "error": f"list failed: {e}"}
+
+
+@app.post("/files")
+async def upload_file_root(file: UploadFile = File(...)):
+    return await _upload_file_impl(file)
+
+
+@app.post("/files/upload")
+async def upload_file_compat(file: UploadFile = File(...)):
+    return await _upload_file_impl(file)
+
+
+async def _upload_file_impl(file: UploadFile) -> Dict[str, Any]:
+    if not _fs_ready():
+        return {"ok": False, "error": "Mongo/GridFS not configured (missing MONGO_URI?)"}
+
+    try:
+        filename = os.path.basename(file.filename or "upload.bin")
+        content = await file.read()
+        file_id = _fs.put(
+            content,
+            filename=filename,
+            contentType=file.content_type or "application/octet-stream",
+            uploadedAt=datetime.utcnow(),
+        )
+        return {"ok": True, "id": str(file_id), "name": filename, "size": len(content)}
+    except Exception as e:
+        return {"ok": False, "error": f"upload failed: {e}"}
+
+
+@app.get("/files/{file_id}")
+def download_file(file_id: str):
+    if not _fs_ready():
+        return {"ok": False, "error": "Mongo/GridFS not configured (missing MONGO_URI?)"}
+
+    try:
+        oid = ObjectId(file_id)
+        gf = _fs.get(oid)
+        headers = {"Content-Disposition": f'attachment; filename="{gf.filename}"'}
+        content_type = getattr(gf, "content_type", None) or getattr(gf, "contentType", None) or "application/octet-stream"
+        return StreamingResponse(gf, media_type=content_type, headers=headers)
+    except Exception:
+        return {"ok": False, "error": "not found"}
+
+
+def _latest_uploaded_image_bytes() -> Optional[Dict[str, Any]]:
+    if not _fs_ready():
+        return None
+
+    try:
+        for f in _db["files.files"].find().sort("uploadDate", -1).limit(80):
+            ct = (f.get("contentType") or f.get("content_type") or "").lower().strip()
+            fn = (f.get("filename") or "").lower()
+            is_img = ct.startswith("image/") or fn.endswith((".png", ".jpg", ".jpeg", ".webp"))
+            if not is_img:
+                continue
+            oid = f["_id"]
+            gf = _fs.get(oid)
+            data = gf.read()
+            return {
+                "id": str(oid),
+                "bytes": data,
+                "filename": gf.filename,
+                "content_type": ct or "application/octet-stream",
+            }
+    except Exception:
+        return None
+    return None
+
+
+# -----------------------------
+# Vision endpoints
+# -----------------------------
+@app.get("/vision/last")
+def vision_last(prompt: str = Query(default="Describe this image.")):
+    item = _latest_uploaded_image_bytes()
+    if not item:
+        return {"ok": False, "error": "No recent image found (upload an image first)."}
+
+    res = tool_vision_analyze_bytes(img_bytes=item["bytes"], content_type=item["content_type"], prompt=prompt)
+    if not res.get("ok"):
+        return res
+
+    return {
+        "ok": True,
+        "file_id": item["id"],
+        "filename": item["filename"],
+        "content_type": item["content_type"],
+        "analysis": res.get("text") or "",
+        "provider": res.get("provider"),
+        "model": res.get("model"),
     }
-    filesList.innerHTML = files.map((f) => {
-      const name = (f.name || "file").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      return `• <a href="${API_BASE}/files/${f.id}" target="_blank" rel="noopener noreferrer">${name}</a> (${f.size} bytes)`;
-    }).join("<br/>");
-  } catch {
-    filesList.textContent = "Files unavailable";
-  }
-}
 
-uploadBtn?.addEventListener("click", async () => {
-  if (!fileInput?.files?.length) return;
-  const file = fileInput.files[0];
 
-  try {
-    const form = new FormData();
-    form.append("file", file);
+@app.get("/vision/{file_id}")
+def vision_by_id(file_id: str, prompt: str = Query(default="Describe this image.")):
+    if not _fs_ready():
+        return {"ok": False, "error": "Mongo/GridFS not configured (missing MONGO_URI?)"}
 
-    const r = await fetch(`${API_BASE}/files`, { method: "POST", body: form });
-    const txt = await r.text();
-    let data;
-    try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+    try:
+        oid = ObjectId(file_id)
+        gf = _fs.get(oid)
+        data = gf.read()
+        ct = getattr(gf, "content_type", None) or getattr(gf, "contentType", None) or "application/octet-stream"
 
-    if (!r.ok || !data.ok) {
-      log(`upload failed: ${data.error || txt}`);
-      return;
+        res = tool_vision_analyze_bytes(img_bytes=data, content_type=ct, prompt=prompt)
+        if not res.get("ok"):
+            return res
+
+        return {
+            "ok": True,
+            "file_id": file_id,
+            "filename": gf.filename,
+            "content_type": ct,
+            "analysis": res.get("text") or "",
+            "provider": res.get("provider"),
+            "model": res.get("model"),
+        }
+    except Exception:
+        return {"ok": False, "error": "not found"}
+
+
+# -----------------------------
+# Council logs endpoints
+# -----------------------------
+@app.get("/council/last")
+def council_last():
+    if not _memory:
+        return {"ok": True, "has_log": False, "error": "Memory not configured (missing MONGO_URI?)"}
+    item = _memory.get_last_council_log()
+    if not item:
+        return {"ok": True, "has_log": False}
+    return {"ok": True, "has_log": True, "session_id": item.get("session_id"), "created": item.get("created"), "events": item.get("events", [])}
+
+
+@app.get("/council/{session_id}")
+def council_by_session(session_id: str):
+    if not _memory:
+        return {"ok": False, "error": "Memory not configured (missing MONGO_URI?)"}
+    item = _memory.get_council_log(session_id=session_id)
+    if not item:
+        return {"ok": False, "error": "No council log for that session."}
+    return {"ok": True, "session_id": session_id, "events": item.get("events", [])}
+
+
+# -----------------------------
+# Provider fallback
+# -----------------------------
+def _call_with_fallback(user_text: str, requested_provider: str = "auto", forced_model: Optional[str] = None) -> Dict[str, Any]:
+    global _last_tried
+
+    provider_order = ["openai", "openrouter", "groq", "huggingface", "anthropic", "gemini", "mistral", "perplexity"]
+    requested_provider = (requested_provider or "auto").lower().strip()
+
+    if requested_provider != "auto":
+        if requested_provider not in PROVIDER_CALLERS:
+            return {"ok": False, "error": f"provider not supported: {requested_provider}", "attempts": []}
+        provider_order = [requested_provider]
+
+    attempts: List[Dict[str, Any]] = []
+
+    def try_one(provider: str, model: str) -> ProviderResult:
+        global _last_tried
+        _last_tried = {"ts": int(time.time() * 1000), "provider": provider, "model": model, "error": None}
+        res = PROVIDER_CALLERS[provider](user_text, model)
+        if not res.ok:
+            _last_tried["error"] = res.error
+        return res
+
+    for provider in provider_order:
+        if provider not in PROVIDER_CALLERS:
+            continue
+
+        if not _provider_key_present(provider):
+            attempts.append({"provider": provider, "skipped": True, "reason": "key missing"})
+            continue
+
+        models = get_models(provider)
+        if forced_model:
+            models = [forced_model]
+
+        if not models:
+            attempts.append({"provider": provider, "skipped": True, "reason": "no models configured"})
+            continue
+
+        for model in models:
+            res = try_one(provider, model)
+            if res.ok:
+                return {"ok": True, "provider": provider, "model": model, "text": res.text, "attempts": attempts + [{"provider": provider, "model": model, "ok": True}]}
+
+            attempts.append({"provider": provider, "model": model, "ok": False, "error": res.error, "upstream": res.upstream})
+
+    return {"ok": False, "error": "no providers succeeded", "attempts": attempts}
+
+
+# -----------------------------
+# Council trigger (FIXED)
+# -----------------------------
+def _should_use_council(msg: str) -> bool:
+    """
+    Stronger trigger:
+      - legal/permits/zoning/ordinances
+      - construction/engineering/structural
+      - shelter/bunker/fallout
+      - tool-like asks (weather/news/web/image)
+      - complexity score (length/clauses/questions)
+    """
+    text = (msg or "").strip()
+    m = text.lower()
+
+    # immediate tool triggers
+    tool_hits = [
+        "right now", "current", "latest", "today",
+        "news", "headlines",
+        "weather", "forecast",
+        "search", "look up", "sources", "web", "internet",
+        "image", "photo", "picture", "uploaded", "analyze", "describe this image",
+    ]
+    if any(w in m for w in tool_hits):
+        return True
+
+    # legal + build triggers
+    hard_hits = [
+        "permit", "permitting", "zoning", "ordinance", "code enforcement", "inspection",
+        "onslow", "camp lejeune", "jacksonville nc", "north carolina",
+        "structural", "engineering", "foundation", "load bearing", "rebar",
+        "fallout shelter", "shelter", "bunker", "storm shelter", "safe room",
+        "egress", "ventilation", "drainage", "septic", "setback",
+    ]
+    if any(w in m for w in hard_hits):
+        return True
+
+    # complexity score
+    score = 0
+    if len(text) >= 220:
+        score += 2
+    if len(text) >= 500:
+        score += 2
+    if text.count("?") >= 2:
+        score += 2
+    if any(w in m for w in ["step by step", "detailed", "comprehensive", "plan", "design"]):
+        score += 2
+    if any(w in m for w in ["and", "but", "however", "because", "whereas"]):
+        score += 1
+
+    return score >= 2
+
+
+# -----------------------------
+# Council runner (tools + debate)
+# -----------------------------
+def _run_council(user_msg: str, session_id: str, requested_provider: str, forced_model: Optional[str], rounds: int, debug: bool) -> Dict[str, Any]:
+    events: List[Dict[str, Any]] = []
+
+    def add_event(role: str, text: str = "", provider: str = "", model: str = "", tools: Any = None, error: str = ""):
+        e: Dict[str, Any] = {"role": role, "text": text}
+        if provider:
+            e["provider"] = provider
+        if model:
+            e["model"] = model
+        if tools is not None:
+            e["tools"] = tools
+        if error:
+            e["error"] = error
+        events.append(e)
+
+    memory_block = ""
+    if _memory:
+        recent = _memory.get_recent_messages(session_id=session_id, limit=12)
+        if recent:
+            lines = []
+            for r in recent:
+                lines.append(f"{r.get('role','user').upper()}: {r.get('text','')}")
+            memory_block = "\n".join(lines)
+
+    m = (user_msg or "").lower()
+    want_weather = "weather" in m or "forecast" in m
+    want_news = "news" in m or "headlines" in m
+    want_web = any(x in m for x in ["search", "look up", "latest", "right now", "current", "sources", "web", "internet", "permit", "zoning", "ordinance", "code", "inspection", "legal"])
+    want_vision = any(x in m for x in ["image", "photo", "picture", "uploaded", "tell me about the picture", "describe the picture"])
+
+    tool_outputs: Dict[str, Any] = {}
+
+    try:
+        if want_weather:
+            tool_outputs["weather"] = tool_weather(user_msg)
+        if want_news:
+            tool_outputs["news"] = tools_news()
+        if want_web:
+            tool_outputs["web"] = tool_web_search(user_msg)
+        if want_vision:
+            item = _latest_uploaded_image_bytes()
+            if item:
+                v = tool_vision_analyze_bytes(img_bytes=item["bytes"], content_type=item["content_type"], prompt=user_msg)
+                tool_outputs["vision"] = {"file_id": item["id"], "filename": item["filename"], "content_type": item["content_type"], "result": v}
+            else:
+                tool_outputs["vision"] = {"ok": False, "error": "No recent image found (upload an image first)."}
+
+        add_event("TOOLS", text="Tools executed", tools=tool_outputs)
+    except Exception as e:
+        add_event("TOOLS", text="Tool execution failed", error=str(e), tools=tool_outputs)
+
+    context_parts: List[str] = []
+    context_parts.append("You are ARC-OMEGA Council. Do NOT mention internal roles.")
+    context_parts.append("Be accurate, practical, and structured. If tools are available, incorporate them clearly.")
+    if memory_block:
+        context_parts.append("SESSION MEMORY (recent):\n" + memory_block)
+    if tool_outputs:
+        context_parts.append("TOOLS OUTPUTS (JSON):\n" + str(tool_outputs))
+
+    # Graceful fallback hint for vision failures
+    if isinstance(tool_outputs.get("vision"), dict):
+        vr = tool_outputs["vision"].get("result") if "result" in tool_outputs["vision"] else tool_outputs["vision"]
+        if isinstance(vr, dict) and vr.get("ok") is False:
+            context_parts.append(
+                "VISION NOTE:\n"
+                "If image analysis failed due to quotas/credits, do NOT stop. "
+                "Provide best-effort help by asking the user for a short description of what the image shows "
+                "and what they want extracted, then propose next steps."
+            )
+
+    context_parts.append("USER REQUEST:\n" + user_msg)
+    base_context = "\n\n".join(context_parts)
+
+    def council_step(role: str, instruction: str) -> Dict[str, Any]:
+        prompt = f"{base_context}\n\nROLE: {role}\nTASK: {instruction}\n"
+        out = _call_with_fallback(prompt, requested_provider=requested_provider, forced_model=forced_model)
+        add_event(role, text=out.get("text") or "", provider=out.get("provider") or "", model=out.get("model") or "", error=out.get("error") or "")
+        return out
+
+    proposer = council_step("PROPOSER", "Draft the best answer. If tools are available, incorporate them.")
+    council_step("CRITIC", "Find mistakes, missing steps, risks, and improvements. Be specific.")
+
+    revised_text = proposer.get("text") or ""
+    for _ in range(max(1, rounds) - 1):
+        reviser = council_step("REVISER", "Revise the answer to address CRITIC feedback. Output the improved answer.")
+        if reviser.get("ok"):
+            revised_text = reviser.get("text") or revised_text
+
+    final = council_step("FINAL", "Return ONLY the final user-facing answer. No role talk. Mention tools used if relevant.")
+    final_text = (final.get("text") or "").strip() or revised_text.strip()
+
+    if _memory:
+        _memory.save_council_log(session_id=session_id, events=events)
+
+    return {"ok": bool(final_text), "text": final_text, "events": events}
+
+
+# -----------------------------
+# Query endpoint
+# -----------------------------
+@app.post("/query")
+def query(q: QueryIn):
+    msg = (q.message or "").strip()
+    if not msg:
+        return {"ok": False, "error": "empty message"}
+
+    session_id = (q.session_id or "default").strip() or "default"
+    requested_provider = (q.provider or "auto").lower().strip()
+
+    if _memory:
+        _memory.add_message(session_id=session_id, role="user", text=msg)
+
+    use_council = bool(q.force_council) or _should_use_council(msg)
+
+    if use_council:
+        out = _run_council(
+            user_msg=msg,
+            session_id=session_id,
+            requested_provider=requested_provider,
+            forced_model=q.model,
+            rounds=q.council_rounds or 2,
+            debug=q.debug,
+        )
+        if _memory:
+            _memory.add_message(session_id=session_id, role="assistant", text=out.get("text") or "")
+
+        resp: Dict[str, Any] = {
+            "ok": out.get("ok"),
+            "ts": int(time.time() * 1000),
+            "provider": "council",
+            "model": q.model,
+            "text": out.get("text") or "",
+            "council_session_id": session_id,
+        }
+        if q.debug:
+            resp["council"] = out.get("events", [])
+        return resp
+
+    out = _call_with_fallback(msg, requested_provider=requested_provider, forced_model=q.model)
+    if out.get("ok"):
+        if _memory:
+            _memory.add_message(session_id=session_id, role="assistant", text=out.get("text") or "")
+        return {
+            "ok": True,
+            "ts": int(time.time() * 1000),
+            "provider": out.get("provider"),
+            "model": out.get("model"),
+            "text": out.get("text"),
+            "attempts": out.get("attempts", []),
+            "council_session_id": session_id,
+        }
+
+    return {
+        "ok": False,
+        "ts": int(time.time() * 1000),
+        "provider": None,
+        "model": None,
+        "text": None,
+        "error": out.get("error") or "no providers succeeded",
+        "attempts": out.get("attempts", []),
+        "council_session_id": session_id,
     }
-
-    log(`uploaded: ${data.name} (${data.size} bytes)`);
-    // ✅ clear file chooser
-    fileInput.value = "";
-    refreshFilesList();
-  } catch (e) {
-    log(`upload error: ${e.message || String(e)}`);
-  }
-});
-
-refreshFilesList();
-setInterval(refreshFilesList, 60 * 1000);
-
-/* Council log (drawer) */
-async function openCouncilLog() {
-  if (!councilLog || !councilStatus) return;
-
-  councilStatus.textContent = "Loading council session…";
-  try {
-    const data = await apiGet(`/council/last?session_id=${encodeURIComponent(SESSION_ID)}`);
-    if (!data.ok) {
-      councilStatus.textContent = data.error || "No council session found.";
-      councilLog.style.display = "none";
-      return;
-    }
-
-    councilStatus.textContent = `Council session: ${data.session_id} • ${new Date(data.ts).toLocaleString()}`;
-    councilLog.style.display = "block";
-    councilLog.textContent = data.log || "(empty)";
-  } catch (e) {
-    councilStatus.textContent = "No council session found yet for this session.";
-    councilLog.style.display = "none";
-  }
-}
-btnOpenCouncilLog?.addEventListener("click", openCouncilLog);
-
-/* -------------------------
-   GEO MAP (no uploaded map)
-   Uses a free static map:
-   https://staticmap.openstreetmap.de/
-------------------------- */
-const geoMapImg = document.getElementById("geoMapImg");
-const mapPin = document.getElementById("mapPin");
-const mapStatus = document.getElementById("mapStatus");
-const nightOverlay = document.getElementById("nightOverlay");
-
-function isLikelyNightLocal() {
-  // simple local heuristic: darken from 18:30 to 06:30
-  const now = new Date();
-  const h = now.getHours() + now.getMinutes() / 60;
-  return (h >= 18.5 || h <= 6.5);
-}
-
-async function refreshGeoMap() {
-  if (!geoMapImg || !mapPin || !mapStatus || !nightOverlay) return;
-
-  const pos = await getPosition();
-  if (!pos) {
-    mapStatus.textContent = "Map unavailable (location blocked)";
-    return;
-  }
-
-  const lat = pos.coords.latitude;
-  const lon = pos.coords.longitude;
-
-  // ✅ correct location pin (centered map)
-  const zoom = 8; // good for Onslow/Jacksonville
-  const w = 900;
-  const h = 520;
-
-  // Static map service (free, no key)
-  // Marker uses lat,lon
-  const url =
-    `https://staticmap.openstreetmap.de/staticmap.php` +
-    `?center=${encodeURIComponent(lat + "," + lon)}` +
-    `&zoom=${zoom}&size=${w}x${h}` +
-    `&markers=${encodeURIComponent(lat + "," + lon + ",cyan-pushpin")}`;
-
-  geoMapImg.src = url;
-  mapStatus.textContent = `Map running • lat ${lat.toFixed(4)} lon ${lon.toFixed(4)}`;
-
-  // night overlay
-  nightOverlay.style.background = isLikelyNightLocal() ? "rgba(0,0,0,0.32)" : "rgba(0,0,0,0.06)";
-
-  // pin is already baked into image, but we keep a subtle UI pin anyway (center)
-  mapPin.style.left = "50%";
-  mapPin.style.top = "50%";
-}
-
-refreshGeoMap();
-setInterval(refreshGeoMap, 5 * 60 * 1000);
