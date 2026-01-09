@@ -23,6 +23,21 @@
       <button id="btnRefreshWeather" class="btn">Refresh weather</button>
       <button id="btnRefreshNews" class="btn">Refresh news</button>
 
+      <div class="drawerSectionTitle">Services</div>
+      <div class="subtle">Integration health + failover hints</div>
+      <button id="btnRefreshServices" class="btn">Refresh services</button>
+      <div id="servicesBox" class="subtle mono" style="margin-top:6px; white-space:pre-wrap;">Loading…</div>
+
+      <div class="drawerSectionTitle">Voice</div>
+      <div class="subtle">Push-to-talk (STT → ARC → TTS)</div>
+      <button id="btnVoiceHold" class="btn">Hold to Talk</button>
+      <button id="btnVoiceStart" class="btn">Start Conversation</button>
+      <label class="subtle" style="display:block; margin-top:8px;"><input type="checkbox" id="chkWakePhrase" /> Require wake phrase ("ARC", "Hey ARC")</label>
+      <button id="btnVoiceDownloadLog" class="btn">Download Voice Log</button>
+      <div id="voiceStatus" class="subtle mono" style="margin-top:6px;">Idle</div>
+      <audio id="voicePlayer" controls style="width:100%; margin-top:6px; display:none;"></audio>
+
+
       <div class="drawerSectionTitle">Files</div>
       <div class="subtle">Upload → stored in Mongo/GridFS</div>
       <input id="fileInput" class="fileInput" type="file" />

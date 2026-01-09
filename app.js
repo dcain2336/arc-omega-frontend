@@ -1,5 +1,29 @@
 // frontend/app.js
-const API_BASE = "https://arc-omega-backend.onrender.com";
+// Backend failover chain.
+// Tip: you can set a custom list in your browser storage under `arc_backends`.
+const DEFAULT_BACKENDS = [
+  "https://arc-omega-backend.onrender.com", // Render
+  // Add your Hugging Face Space backend URL here (same API as Render)
+  // Example: "https://YOUR_SPACE.hf.space"
+];
+
+function getBackends() {
+  try {
+    const raw = localStorage.getItem("arc_backends");
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length) return arr;
+    }
+  } catch {}
+  return DEFAULT_BACKENDS;
+}
+
+let ACTIVE_API_BASE = localStorage.getItem("arc_active_backend") || getBackends()[0];
+
+function setActiveBase(base) {
+  ACTIVE_API_BASE = base;
+  try { localStorage.setItem("arc_active_backend", base); } catch {}
+}
 
 // session id (persist per browser)
 const SESSION_KEY = "arc_session_id";
@@ -30,6 +54,11 @@ const fileInput = document.getElementById("fileInput");
 const uploadBtn = document.getElementById("uploadBtn");
 const filesList = document.getElementById("filesList");
 
+// Voice UI
+const btnVoiceHold = document.getElementById("btnVoiceHold");
+const voiceStatus = document.getElementById("voiceStatus");
+const voicePlayer = document.getElementById("voicePlayer");
+
 const btnOpenCouncilLog = document.getElementById("btnOpenCouncilLog");
 const councilLog = document.getElementById("councilLog");
 const councilStatus = document.getElementById("councilStatus");
@@ -45,8 +74,10 @@ const blackout = document.getElementById("blackout");
 const btnRefreshBackend = document.getElementById("btnRefreshBackend");
 const btnRefreshWeather = document.getElementById("btnRefreshWeather");
 const btnRefreshNews = document.getElementById("btnRefreshNews");
+const btnRefreshServices = document.getElementById("btnRefreshServices");
+const servicesBox = document.getElementById("servicesBox");
 
-if (apiUrlText) apiUrlText.textContent = API_BASE;
+if (apiUrlText) apiUrlText.textContent = ACTIVE_API_BASE;
 
 function log(line) {
   if (!terminal) return;
@@ -54,27 +85,40 @@ function log(line) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
+async function fetchWithFailover(path, opts) {
+  const backends = getBackends();
+  const ordered = [ACTIVE_API_BASE, ...backends.filter(b => b !== ACTIVE_API_BASE)];
+  let lastErr;
+  for (const base of ordered) {
+    try {
+      const r = await fetch(`${base}${path}`, { ...opts, cache: "no-store" });
+      if (r.ok) {
+        if (base !== ACTIVE_API_BASE) setActiveBase(base);
+        return r;
+      }
+      const txt = await r.text();
+      lastErr = new Error(`${base}${path} -> ${r.status} ${txt}`);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("No backends available");
+}
+
 async function apiGet(path) {
-  const r = await fetch(`${API_BASE}${path}`, { method: "GET", cache: "no-store" });
+  const r = await fetchWithFailover(path, { method: "GET" });
   const txt = await r.text();
-  let data;
-  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
-  if (!r.ok) throw new Error(`${r.status} ${txt}`);
-  return data;
+  try { return JSON.parse(txt); } catch { return { raw: txt }; }
 }
 
 async function apiPost(path, body) {
-  const r = await fetch(`${API_BASE}${path}`, {
+  const r = await fetchWithFailover(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    cache: "no-store",
   });
   const txt = await r.text();
-  let data;
-  try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
-  if (!r.ok) throw new Error(`${r.status} ${txt}`);
-  return data;
+  try { return JSON.parse(txt); } catch { return { raw: txt }; }
 }
 
 /* Drawer + blackout */
@@ -96,6 +140,8 @@ blackout?.addEventListener("click", () => blackout?.classList.add("hidden"));
 btnRefreshBackend?.addEventListener("click", () => refreshBackendStatus(true));
 btnRefreshWeather?.addEventListener("click", refreshWeather);
 btnRefreshNews?.addEventListener("click", refreshNews);
+btnRefreshServices?.addEventListener("click", refreshServices);
+btnRefreshServices?.addEventListener("click", refreshServices);
 
 /* Backend status polling */
 let lastBackendRefresh = 0;
@@ -117,6 +163,29 @@ async function refreshBackendStatus(force = false) {
 }
 refreshBackendStatus();
 setInterval(refreshBackendStatus, 12000);
+
+/* Services status */
+async function refreshServices() {
+  try {
+    const h = await apiGet("/health");
+    if (!servicesBox) return;
+    const integ = h.integrations || {};
+    const lines = [];
+    lines.push(`MODE: ${(h.mode||'prod')}`);
+    lines.push(`MONGO: ${h.mongo ? 'ok' : 'down'}`);
+    for (const [name, st] of Object.entries(integ)) {
+      const enabled = st.enabled ? 'on' : 'off';
+      const open = st.circuit_open ? 'circuit:open' : 'circuit:ok';
+      const lat = (st.latency_ms != null) ? `lat:${st.latency_ms}ms` : '';
+      const err = st.last_error ? `err:${st.last_error}` : '';
+      lines.push(`${name}: ${enabled} ${open} ${lat} ${err}`.trim());
+    }
+    servicesBox.textContent = lines.join("\n");
+  } catch (e) {
+    if (servicesBox) servicesBox.textContent = `Services unavailable: ${e}`;
+  }
+}
+refreshServices();
 
 /* Send message */
 async function sendMessage() {
@@ -374,3 +443,322 @@ async function refreshGeoMap() {
 
 refreshGeoMap();
 setInterval(refreshGeoMap, 5 * 60 * 1000);
+// -------------------- Voice (push-to-talk) --------------------
+let mediaRecorder = null;
+let voiceChunks = [];
+let isRecording = false;
+
+async function startRecording() {
+  if (isRecording) return;
+  voiceStatus.textContent = "Requesting mic…";
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const options = {};
+  // Safari/iOS often records as audio/mp4; MediaRecorder chooses best.
+  mediaRecorder = new MediaRecorder(stream, options);
+  voiceChunks = [];
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) voiceChunks.push(e.data);
+  };
+  mediaRecorder.onstop = async () => {
+    try {
+      voiceStatus.textContent = "Sending…";
+      const blob = new Blob(voiceChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+      await sendVoiceBlob(blob);
+    } catch (e) {
+      voiceStatus.textContent = "Voice error";
+      logToTerminal("VOICE ERROR: " + (e?.message || e));
+    } finally {
+      isRecording = false;
+      // stop tracks
+      stream.getTracks().forEach(t => t.stop());
+    }
+  };
+
+  mediaRecorder.start();
+  isRecording = true;
+  voiceStatus.textContent = "Recording…";
+}
+
+function stopRecording() {
+  if (!mediaRecorder || !isRecording) return;
+  voiceStatus.textContent = "Processing…";
+  mediaRecorder.stop();
+}
+
+async function sendVoiceBlob(blob) {
+  const fd = new FormData();
+  fd.append("file", blob, "voice.webm");
+
+  const url = `${API_BASE}/voice/chat?session_id=${encodeURIComponent(SESSION_ID)}&provider=auto`;
+  const r = await fetch(url, { method: "POST", body: fd });
+  const j = await r.json();
+  if (!j.ok) {
+    voiceStatus.textContent = "Voice failed";
+    logToTerminal("VOICE FAILED: " + (j.error || "unknown"));
+    return;
+  }
+
+  // Print transcript + reply
+  logToTerminal("\n[VOICE] You: " + (j.transcript || ""));
+  logToTerminal("[VOICE] ARC: " + (j.reply_text || ""));
+
+  if (j.audio_file_id) {
+    const audioUrl = `${API_BASE}/files/${encodeURIComponent(j.audio_file_id)}`;
+    voicePlayer.src = audioUrl;
+    voicePlayer.style.display = "block";
+    // attempt autoplay; iOS may block unless user taps play
+    try { await voicePlayer.play(); } catch (_) {}
+    voiceStatus.textContent = "Ready (audio)";
+  } else {
+    voiceStatus.textContent = "Ready (text-only)";
+    if (j.tts_error) logToTerminal("[VOICE] TTS degraded: " + j.tts_error);
+  }
+}
+
+// Hold-to-talk: pointer events cover mouse + touch
+if (btnVoiceHold) {
+  btnVoiceHold.addEventListener("pointerdown", async (e) => {
+    e.preventDefault();
+    try { await startRecording(); } catch (err) {
+      voiceStatus.textContent = "Mic denied";
+      logToTerminal("MIC PERMISSION ERROR: " + (err?.message || err));
+    }
+  });
+  const stopHandler = (e) => { e.preventDefault(); stopRecording(); };
+  btnVoiceHold.addEventListener("pointerup", stopHandler);
+  btnVoiceHold.addEventListener("pointercancel", stopHandler);
+  btnVoiceHold.addEventListener("pointerleave", stopHandler);
+}
+
+
+
+
+// =========================
+// Continuous conversation mode (hands-free)
+// =========================
+const btnVoiceStart = document.getElementById("btnVoiceStart");
+const chkWakePhrase = document.getElementById("chkWakePhrase");
+const btnVoiceDownloadLog = document.getElementById("btnVoiceDownloadLog");
+
+let convoEnabled = false;
+let convoSessionId = "voice_default";
+let convoLog = []; // {role, text, ts}
+
+function addConvoLog(role, text) {
+  const entry = { role, text, ts: Date.now() };
+  convoLog.push(entry);
+  // also print to terminal
+  const prefix = role === "user" ? "YOU" : "ARC";
+  logToTerminal(`[VOICELOG] ${prefix}: ${text}`);
+}
+
+async function backendAppendVoiceLog(transcript, reply_text, audio_file_id) {
+  try {
+    await apiPost("/voice/logs", { session_id: convoSessionId, transcript, reply_text, audio_file_id });
+  } catch (e) {
+    // ignore
+  }
+}
+
+function shouldRespond(transcript) {
+  const needWake = !!(chkWakePhrase && chkWakePhrase.checked);
+  if (!needWake) return true;
+  const t = (transcript || "").trim().toLowerCase();
+  return t.startsWith("arc") || t.startsWith("hey arc") || t.startsWith("okay arc") || t.startsWith("ok arc");
+}
+
+async function recordUtteranceWithVAD() {
+  // Reuse getUserMedia stream
+  if (!window.__arcMicStream) {
+    window.__arcMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  }
+  const stream = window.__arcMicStream;
+
+  // Recorder
+  const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" :
+               (MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "");
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  const chunks = [];
+
+  // VAD using AnalyserNode
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  const ctx = window.__arcAudioCtx || new AudioContext();
+  window.__arcAudioCtx = ctx;
+  const src = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+  src.connect(analyser);
+
+  const data = new Uint8Array(analyser.fftSize);
+
+  let heardSpeech = false;
+  let lastLoudTs = Date.now();
+  const startTs = Date.now();
+
+  function rms() {
+    analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = (data[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / data.length);
+  }
+
+  const THRESH = 0.035;      // tweak if needed
+  const SILENCE_MS = 1100;   // end-of-utterance silence
+  const MIN_MS = 650;        // minimum utterance duration
+  const MAX_MS = 12000;      // safety cap
+
+  let intervalId;
+
+  const done = (resolve, blob) => {
+    try { clearInterval(intervalId); } catch {}
+    try { src.disconnect(); } catch {}
+    resolve(blob);
+  };
+
+  const blobPromise = new Promise((resolve) => {
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = () => {
+      const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+      done(resolve, blob);
+    };
+
+    rec.start(250);
+
+    intervalId = setInterval(() => {
+      const now = Date.now();
+      const level = rms();
+
+      if (level > THRESH) {
+        heardSpeech = true;
+        lastLoudTs = now;
+      }
+
+      const dur = now - startTs;
+      const silentFor = now - lastLoudTs;
+
+      if (heardSpeech && dur > MIN_MS && silentFor > SILENCE_MS) {
+        try { rec.stop(); } catch {}
+      } else if (dur > MAX_MS) {
+        try { rec.stop(); } catch {}
+      }
+    }, 150);
+  });
+
+  // small UX update
+  voiceStatus.textContent = "Listening…";
+  return await blobPromise;
+}
+
+async function sendUtterance(blob) {
+  // STT first
+  const fd = new FormData();
+  fd.append("file", blob, "utterance.webm");
+  const sttResp = await fetch(`${API_BASE}/voice/stt`, { method: "POST", body: fd });
+  const sttJson = await sttResp.json();
+  if (!sttJson.ok) throw new Error(sttJson.error || "STT failed");
+  const transcript = (sttJson.transcript || "").trim();
+  if (!transcript) return { skipped: true };
+
+  addConvoLog("user", transcript);
+
+  if (!shouldRespond(transcript)) {
+    // Don't run council; continue listening
+    voiceStatus.textContent = 'Heard (wake phrase not detected)';
+    await backendAppendVoiceLog(transcript, "", null);
+    return { skipped: true, transcript };
+  }
+
+  // Run ARC query
+  const q = await apiPost("/query", { message: transcript, session_id: convoSessionId });
+  const replyText = (q.reply || q.text || q.output || "").toString().trim() || "(no reply)";
+  addConvoLog("assistant", replyText);
+
+  // TTS
+  let audioFileId = null;
+  try {
+    const tts = await apiPost("/voice/tts", { text: replyText, filename: "arc_reply.mp3" });
+    audioFileId = tts.file_id || tts.fileId || null;
+  } catch (e) {
+    logToTerminal("[VOICE] TTS failed (text-only): " + (e?.message || e));
+  }
+
+  await backendAppendVoiceLog(transcript, replyText, audioFileId);
+
+  return { transcript, replyText, audioFileId };
+}
+
+async function playAudioByFileId(fileId) {
+  if (!fileId) return;
+  const url = `${API_BASE}/files/${fileId}`;
+  voicePlayer.src = url;
+  voicePlayer.style.display = "block";
+  try {
+    await voicePlayer.play();
+  } catch (e) {
+    // iOS may block autoplay; user can tap play
+  }
+  // wait for playback to end
+  await new Promise((resolve) => {
+    const done = () => { voicePlayer.removeEventListener("ended", done); resolve(); };
+    voicePlayer.addEventListener("ended", done);
+    // in case user doesn't play, resolve after 3s so we don't stall
+    setTimeout(resolve, 3000);
+  });
+}
+
+async function conversationLoop() {
+  while (convoEnabled) {
+    try {
+      const blob = await recordUtteranceWithVAD();
+      voiceStatus.textContent = "Processing…";
+      const out = await sendUtterance(blob);
+      if (out && out.audioFileId) {
+        await playAudioByFileId(out.audioFileId);
+      }
+    } catch (e) {
+      logToTerminal("[VOICE] error: " + (e?.message || e));
+    }
+    if (!convoEnabled) break;
+    voiceStatus.textContent = "Listening…";
+    await new Promise(r => setTimeout(r, 200));
+  }
+  voiceStatus.textContent = "Idle";
+}
+
+if (btnVoiceStart) {
+  btnVoiceStart.addEventListener("click", async () => {
+    if (!convoEnabled) {
+      convoEnabled = true;
+      btnVoiceStart.textContent = "Stop Conversation";
+      logToTerminal("[VOICE] Conversation mode started");
+      try {
+        await conversationLoop();
+      } catch {}
+    } else {
+      convoEnabled = false;
+      btnVoiceStart.textContent = "Start Conversation";
+      logToTerminal("[VOICE] Conversation mode stopped");
+    }
+  });
+}
+
+if (btnVoiceDownloadLog) {
+  btnVoiceDownloadLog.addEventListener("click", async () => {
+    // Build a simple text transcript and store it as a file via backend
+    const lines = convoLog.map(e => {
+      const who = e.role === "user" ? "YOU" : "ARC";
+      const ts = new Date(e.ts).toLocaleString();
+      return `[${ts}] ${who}: ${e.text}`;
+    }).join("\n");
+    try {
+      const j = await apiPost("/files/generate/text", { filename: `voice_log_${convoSessionId}.txt`, content: lines });
+      logToTerminal(`[VOICE] Log saved as file_id=${j.file_id || j.fileId || j.id}`);
+    } catch (e) {
+      logToTerminal("[VOICE] Failed to save log: " + (e?.message || e));
+    }
+  });
+}
+
