@@ -1,4 +1,18 @@
 // frontend/app.js
+
+// --- ARC UI crash guard: surface JS errors to the Terminal ---
+window.addEventListener("error", (e) => {
+  try {
+    const term = document.getElementById("terminalOut");
+    if (term) term.textContent = `[JS ERROR] ${e.message}\n` + term.textContent;
+  } catch (_) {}
+});
+window.addEventListener("unhandledrejection", (e) => {
+  try {
+    const term = document.getElementById("terminalOut");
+    if (term) term.textContent = `[PROMISE REJECTION] ${e.reason}\n` + term.textContent;
+  } catch (_) {}
+});
 // Backend failover chain.
 // Tip: you can set a custom list in your browser storage under `arc_backends`.
 const DEFAULT_BACKENDS = [
@@ -600,7 +614,7 @@ async function startRecording() {
   voiceStatus.textContent = "Recording…";
 }
 
-function stopRecording() {
+async function stopRecording() {
   if (!mediaRecorder || !isRecording) return;
   voiceStatus.textContent = "Processing…";
   mediaRecorder.stop();
