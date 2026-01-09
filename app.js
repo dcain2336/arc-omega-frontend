@@ -1,6 +1,18 @@
 // frontend/app.js
 const API_BASE = "https://arc-omega-backend.onrender.com";
 
+// session id (persist per browser)
+const SESSION_KEY = "arc_session_id";
+function getSessionId() {
+  let s = localStorage.getItem(SESSION_KEY);
+  if (!s) {
+    s = "s_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
+    localStorage.setItem(SESSION_KEY, s);
+  }
+  return s;
+}
+const SESSION_ID = getSessionId();
+
 // Elements
 const apiUrlText = document.getElementById("apiUrlText");
 const upstreamText = document.getElementById("upstreamText");
@@ -18,8 +30,9 @@ const fileInput = document.getElementById("fileInput");
 const uploadBtn = document.getElementById("uploadBtn");
 const filesList = document.getElementById("filesList");
 
-const btnCouncilLog = document.getElementById("btnCouncilLog");
-const councilLogBox = document.getElementById("councilLogBox");
+const btnOpenCouncilLog = document.getElementById("btnOpenCouncilLog");
+const councilLog = document.getElementById("councilLog");
+const councilStatus = document.getElementById("councilStatus");
 
 // Drawer / overlay / blackout
 const btnMenu = document.getElementById("btnMenu");
@@ -34,17 +47,6 @@ const btnRefreshWeather = document.getElementById("btnRefreshWeather");
 const btnRefreshNews = document.getElementById("btnRefreshNews");
 
 if (apiUrlText) apiUrlText.textContent = API_BASE;
-
-// Stable session id
-function getOrCreate(id, genFn) {
-  let v = localStorage.getItem(id);
-  if (!v) {
-    v = genFn();
-    localStorage.setItem(id, v);
-  }
-  return v;
-}
-const SESSION_ID = getOrCreate("arc_session_id", () => "s_" + Math.random().toString(36).slice(2, 10));
 
 function log(line) {
   if (!terminal) return;
@@ -125,14 +127,13 @@ async function sendMessage() {
   log(`> ${msg}`);
 
   try {
-    const out = await apiPost("/query", { message: msg, session_id: SESSION_ID, debug: false });
+    // IMPORTANT: include session_id so council log binds correctly
+    const out = await apiPost("/query", { message: msg, session_id: SESSION_ID });
     if (!out.ok) {
       log(`! error: ${out.error || "unknown"}`);
       return;
     }
     log(out.text || "(no text)");
-    // update council log availability
-    await refreshCouncilLog(false);
   } catch (e) {
     log(`send error: ${e.message || String(e)}`);
   }
@@ -149,12 +150,12 @@ function getPosition() {
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve(pos),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout: 9000, maximumAge: 120000 }
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
     );
   });
 }
 
-/* Weather (frontend) */
+/* Weather (UI only, map + tool router will also use backend when needed) */
 async function refreshWeather() {
   try {
     const pos = await getPosition();
@@ -162,7 +163,6 @@ async function refreshWeather() {
       weatherText.textContent = "Weather unavailable (no location / blocked)";
       return;
     }
-
     const lat = pos.coords.latitude;
     const lon = pos.coords.longitude;
 
@@ -196,19 +196,24 @@ function buildWorldTimeLine() {
     { name: "MT", tz: "America/Denver" },
     { name: "PT", tz: "America/Los_Angeles" },
     { name: "UTC", tz: "UTC" },
+    { name: "London", tz: "Europe/London" },
+    { name: "Paris", tz: "Europe/Paris" },
+    { name: "Dubai", tz: "Asia/Dubai" },
     { name: "Manila", tz: "Asia/Manila" },
     { name: "Guam", tz: "Pacific/Guam" },
     { name: "Seoul", tz: "Asia/Seoul" },
     { name: "Tokyo", tz: "Asia/Tokyo" },
-    { name: "London", tz: "Europe/London" },
-    { name: "Dubai", tz: "Asia/Dubai" },
+    { name: "Sydney", tz: "Australia/Sydney" },
   ];
 
   const now = new Date();
   const pieces = zones.map((z) => {
     const fmt = new Intl.DateTimeFormat([], {
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-      hour12: false, timeZone: z.tz
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZone: z.tz,
     });
     return `${z.name} ${fmt.format(now)}`;
   });
@@ -238,11 +243,15 @@ async function refreshNews() {
 refreshNews();
 setInterval(refreshNews, 10 * 60 * 1000);
 
-/* Files list */
+/* Files list + upload */
 async function refreshFilesList() {
   if (!filesList) return;
   try {
     const data = await apiGet("/files");
+    if (!data.ok) {
+      filesList.textContent = data.error || "Files unavailable";
+      return;
+    }
     const files = data.files || [];
     if (!files.length) {
       filesList.textContent = "No files yet";
@@ -256,10 +265,7 @@ async function refreshFilesList() {
     filesList.textContent = "Files unavailable";
   }
 }
-refreshFilesList();
-setInterval(refreshFilesList, 60 * 1000);
 
-/* Upload file (clears input after success) */
 uploadBtn?.addEventListener("click", async () => {
   if (!fileInput?.files?.length) return;
   const file = fileInput.files[0];
@@ -268,7 +274,7 @@ uploadBtn?.addEventListener("click", async () => {
     const form = new FormData();
     form.append("file", file);
 
-    const r = await fetch(`${API_BASE}/files`, { method: "POST", body: form, cache: "no-store" });
+    const r = await fetch(`${API_BASE}/files`, { method: "POST", body: form });
     const txt = await r.text();
     let data;
     try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
@@ -279,221 +285,92 @@ uploadBtn?.addEventListener("click", async () => {
     }
 
     log(`uploaded: ${data.name} (${data.size} bytes)`);
-
-    // ✅ clear the file picker after upload
+    // ✅ clear file chooser
     fileInput.value = "";
-
-    await refreshFilesList();
+    refreshFilesList();
   } catch (e) {
     log(`upload error: ${e.message || String(e)}`);
   }
 });
 
-/* Council log in drawer */
-async function refreshCouncilLog(showBox = true) {
-  if (!councilLogBox) return;
+refreshFilesList();
+setInterval(refreshFilesList, 60 * 1000);
 
+/* Council log (drawer) */
+async function openCouncilLog() {
+  if (!councilLog || !councilStatus) return;
+
+  councilStatus.textContent = "Loading council session…";
   try {
-    // Prefer session-specific, else last
-    const bySession = await apiGet(`/council/${encodeURIComponent(SESSION_ID)}`);
-    const run = bySession?.run && Object.keys(bySession.run).length ? bySession.run : (await apiGet("/council/last")).run;
-
-    if (!run || !run.council) {
-      councilLogBox.textContent = "No council session found yet for this session.";
-      if (showBox) councilLogBox.classList.remove("hidden");
+    const data = await apiGet(`/council/last?session_id=${encodeURIComponent(SESSION_ID)}`);
+    if (!data.ok) {
+      councilStatus.textContent = data.error || "No council session found.";
+      councilLog.style.display = "none";
       return;
     }
 
-    const lines = [];
-    lines.push(`session_id: ${run.meta?.session_id || run.session_id || "—"}`);
-    lines.push(`tools_used: ${(run.meta?.tools_used || []).join(", ")}`);
-    lines.push(`subcommittees: ${(run.meta?.subcommittees || []).join(", ")}`);
-    lines.push("");
-
-    for (const step of run.council) {
-      const stage = step.stage || "step";
-      const prov = step.provider || "";
-      const model = step.model || "";
-      lines.push(`== ${stage.toUpperCase()} ${prov ? `(${prov}/${model})` : ""} ==`);
-
-      if (stage === "tools") {
-        lines.push(JSON.stringify(step.tool_plan || {}, null, 2));
-        lines.push(JSON.stringify(step.tool_results || {}, null, 2));
-      } else if (step.text) {
-        // don't dump huge; just keep readable
-        lines.push(String(step.text).slice(0, 1200));
-      }
-      lines.push("");
-    }
-
-    councilLogBox.textContent = lines.join("\n");
-    if (showBox) councilLogBox.classList.remove("hidden");
+    councilStatus.textContent = `Council session: ${data.session_id} • ${new Date(data.ts).toLocaleString()}`;
+    councilLog.style.display = "block";
+    councilLog.textContent = data.log || "(empty)";
   } catch (e) {
-    councilLogBox.textContent = "Council log unavailable.";
-    if (showBox) councilLogBox.classList.remove("hidden");
+    councilStatus.textContent = "No council session found yet for this session.";
+    councilLog.style.display = "none";
   }
 }
+btnOpenCouncilLog?.addEventListener("click", openCouncilLog);
 
-btnCouncilLog?.addEventListener("click", async () => {
-  // toggle
-  if (councilLogBox?.classList.contains("hidden")) {
-    await refreshCouncilLog(true);
-  } else {
-    councilLogBox?.classList.add("hidden");
-  }
-});
+/* -------------------------
+   GEO MAP (no uploaded map)
+   Uses a free static map:
+   https://staticmap.openstreetmap.de/
+------------------------- */
+const geoMapImg = document.getElementById("geoMapImg");
+const mapPin = document.getElementById("mapPin");
+const mapStatus = document.getElementById("mapStatus");
+const nightOverlay = document.getElementById("nightOverlay");
 
-/* -----------------------------------------
-   Map mode (static world map + day/night)
-   Uses: ./assets/world-map-blue.png
------------------------------------------ */
-const canvas = document.getElementById("globeCanvas");
-const statusEl = document.getElementById("globeStatus");
-const ctx = canvas?.getContext("2d");
-
-const mapImg = new Image();
-mapImg.src = "./assets/world-map-blue.png";
-
-let userLat = null;
-let userLon = null;
-
-function setCanvasSize() {
-  if (!canvas || !ctx) return;
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const w = Math.max(1, Math.floor(rect.width));
-  const h = Math.max(1, Math.floor(rect.height));
-
-  canvas.width = Math.floor(w * dpr);
-  canvas.height = Math.floor(h * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+function isLikelyNightLocal() {
+  // simple local heuristic: darken from 18:30 to 06:30
+  const now = new Date();
+  const h = now.getHours() + now.getMinutes() / 60;
+  return (h >= 18.5 || h <= 6.5);
 }
 
-function solarSubpointUTC(d) {
-  const ms = d.getTime();
-  const jd = ms / 86400000 + 2440587.5;
-  const n = jd - 2451545.0;
+async function refreshGeoMap() {
+  if (!geoMapImg || !mapPin || !mapStatus || !nightOverlay) return;
 
-  const L = (280.46 + 0.9856474 * n) % 360;
-  const g = (357.528 + 0.9856003 * n) % 360;
-  const lambda = L + 1.915 * Math.sin(g * Math.PI / 180) + 0.020 * Math.sin(2 * g * Math.PI / 180);
-
-  const eps = 23.439 - 0.0000004 * n;
-  const delta = Math.asin(Math.sin(eps * Math.PI / 180) * Math.sin(lambda * Math.PI / 180));
-
-  const timeUTC = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
-  const subLon = ((180 - timeUTC * 15) % 360 + 360) % 360; // 0..360
-  const subLat = delta * 180 / Math.PI;
-  return { lat: subLat, lon: subLon };
-}
-
-function drawMap() {
-  if (!canvas || !ctx) return;
-  setCanvasSize();
-
-  const W = canvas.getBoundingClientRect().width;
-  const H = canvas.getBoundingClientRect().height;
-
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = "rgba(0,0,0,0.18)";
-  ctx.fillRect(0, 0, W, H);
-
-  if (!mapImg.complete || mapImg.naturalWidth === 0) {
-    if (statusEl) statusEl.textContent = "Map loading…";
+  const pos = await getPosition();
+  if (!pos) {
+    mapStatus.textContent = "Map unavailable (location blocked)";
     return;
   }
 
-  // cover-fit image into canvas
-  const imgAR = mapImg.naturalWidth / mapImg.naturalHeight;
-  const canvasAR = W / H;
-  let drawW, drawH, offX, offY;
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
 
-  if (imgAR > canvasAR) {
-    drawH = H;
-    drawW = H * imgAR;
-    offX = (W - drawW) / 2;
-    offY = 0;
-  } else {
-    drawW = W;
-    drawH = W / imgAR;
-    offX = 0;
-    offY = (H - drawH) / 2;
-  }
+  // ✅ correct location pin (centered map)
+  const zoom = 8; // good for Onslow/Jacksonville
+  const w = 900;
+  const h = 520;
 
-  ctx.drawImage(mapImg, offX, offY, drawW, drawH);
+  // Static map service (free, no key)
+  // Marker uses lat,lon
+  const url =
+    `https://staticmap.openstreetmap.de/staticmap.php` +
+    `?center=${encodeURIComponent(lat + "," + lon)}` +
+    `&zoom=${zoom}&size=${w}x${h}` +
+    `&markers=${encodeURIComponent(lat + "," + lon + ",cyan-pushpin")}`;
 
-  // day/night overlay
-  const sun = solarSubpointUTC(new Date());
-  const subLon = sun.lon; // 0..360
+  geoMapImg.src = url;
+  mapStatus.textContent = `Map running • lat ${lat.toFixed(4)} lon ${lon.toFixed(4)}`;
 
-  ctx.save();
-  ctx.globalAlpha = 0.38;
-  ctx.fillStyle = "rgba(0,0,0,1)";
+  // night overlay
+  nightOverlay.style.background = isLikelyNightLocal() ? "rgba(0,0,0,0.32)" : "rgba(0,0,0,0.06)";
 
-  for (let x = 0; x < W; x += 2) {
-    const lon = (x / W) * 360 - 180;
-    const lon360 = ((lon % 360) + 360) % 360;
-    let d = lon360 - subLon;
-    d = ((d + 540) % 360) - 180;
-    if (Math.abs(d) > 90) ctx.fillRect(x, 0, 2, H);
-  }
-  ctx.restore();
-
-  // user pin
-  if (userLat != null && userLon != null) {
-    const px = offX + ((userLon + 180) / 360) * drawW;
-    const py = offY + ((90 - userLat) / 180) * drawH;
-
-    ctx.beginPath();
-    ctx.arc(px, py, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(53,232,255,0.95)";
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(px, py, 10, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(53,232,255,0.35)";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
-
-  if (statusEl) statusEl.textContent = "Map running";
+  // pin is already baked into image, but we keep a subtle UI pin anyway (center)
+  mapPin.style.left = "50%";
+  mapPin.style.top = "50%";
 }
 
-let animId = null;
-function startMapLoop() {
-  if (animId) cancelAnimationFrame(animId);
-  const loop = () => {
-    drawMap();
-    animId = requestAnimationFrame(loop);
-  };
-  animId = requestAnimationFrame(loop);
-}
-
-window.addEventListener("resize", () => {
-  setCanvasSize();
-  setTimeout(setCanvasSize, 250);
-});
-
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    if (animId) cancelAnimationFrame(animId);
-    animId = null;
-  } else {
-    startMapLoop();
-  }
-});
-
-(async () => {
-  const pos = await getPosition();
-  if (pos) {
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
-  }
-  setCanvasSize();
-  startMapLoop();
-})();
-
-mapImg.onload = () => {
-  setCanvasSize();
-  startMapLoop();
-};
+refreshGeoMap();
+setInterval(refreshGeoMap, 5 * 60 * 1000);
