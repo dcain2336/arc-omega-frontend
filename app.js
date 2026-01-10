@@ -16,9 +16,7 @@ window.addEventListener("unhandledrejection", (e) => {
 // Backend failover chain.
 // Tip: you can set a custom list in your browser storage under `arc_backends`.
 const DEFAULT_BACKENDS = [
-  "https://arc-omega-backend.onrender.com", // Render
-  // Add your Hugging Face Space backend URL here (same API as Render)
-  // Example: "https://YOUR_SPACE.hf.space"
+  "https://arc-omega-api.dcain1.workers.dev/api", // Cloudflare Worker API gateway
 ];
 
 function getBackends() {

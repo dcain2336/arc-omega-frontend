@@ -1,4 +1,5 @@
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
+const API_PROXY = API_BASE + "/api";
 const $ = (id) => document.getElementById(id);
 
 function getOrCreate(id, genFn) {
@@ -51,7 +52,7 @@ async function sendPrompt() {
 
   try {
     const payload = { prompt, user_id: USER_ID, session_id: SESSION_ID };
-    const r = await fetchJSON(API_BASE + "/query", {
+    const r = await fetchJSON(API_PROXY + "/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -150,7 +151,7 @@ async function refreshWeather() {
 
 /* -------- News -------- */
 async function refreshNews() {
-  const r = await fetchJSON(API_BASE + "/tools/news", { method: "GET" });
+  const r = await fetchJSON(API_PROXY + "/tools/news", { method: "GET" });
   if (!r.ok) {
     $("tickerNews").textContent = `News error (${r.status})`;
     logSys(`news error ${r.status}: ${JSON.stringify(r.data)}`);
@@ -231,7 +232,7 @@ function initMap() {
 /* -------- System Buttons -------- */
 async function ping() {
   addBubble("user", "ping");
-  const r = await fetchJSON(API_BASE + "/query", {
+  const r = await fetchJSON(API_PROXY + "/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt: "ping", user_id: USER_ID, session_id: SESSION_ID }),
