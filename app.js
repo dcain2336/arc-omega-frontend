@@ -32,6 +32,12 @@ function getBackends() {
 
 let ACTIVE_API_BASE = localStorage.getItem("arc_active_backend") || getBackends()[0];
 
+function getWorkerOrigin() {
+  // If ACTIVE_API_BASE is ".../api", return the Worker origin without /api
+  return (ACTIVE_API_BASE || "").replace(/\/api\/?$/, "");
+}
+
+
 function setActiveBase(base) {
   ACTIVE_API_BASE = base;
   try { localStorage.setItem("arc_active_backend", base); } catch {}
@@ -190,6 +196,13 @@ async function runToolCall(defn, inputValue, saveOutput=false){
   }
 }
 async function apiGet(path) {
+  // Route certain endpoints directly to the Worker (not through /api proxy)
+  if (path === "/tools/news" || path === "/tools/weather") {
+    const origin = getWorkerOrigin();
+    const r0 = await fetch(origin + path, { method: "GET" });
+    const t0 = await r0.text();
+    try { return JSON.parse(t0); } catch { return { raw: t0 }; }
+  }
   const r = await fetchWithFailover(path, { method: "GET" });
   const txt = await r.text();
   try { return JSON.parse(txt); } catch { return { raw: txt }; }
