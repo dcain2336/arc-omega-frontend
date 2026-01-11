@@ -1,270 +1,103 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ARC OMEGA</title>
-
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="./styles.css" />
-
-<script>
-  window.__ARC_JS_LOADED__ = true;
-  document.addEventListener('DOMContentLoaded', () => {
-    const b = document.createElement('div');
-    b.textContent = 'JS LOADED ✅ (v12.8)';
-    b.style.position='fixed'; b.style.top='10px'; b.style.right='10px';
-    b.style.zIndex='99999'; b.style.padding='8px 10px';
-    b.style.border='1px solid rgba(0,255,255,.5)';
-    b.style.borderRadius='10px';
-    b.style.background='rgba(0,0,0,.55)';
-    b.style.color='#00ffff';
-    b.style.fontFamily='system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-    b.style.fontSize='12px';
-    document.body.appendChild(b);
-    setTimeout(()=>{ b.style.opacity='0.2'; }, 4000);
-  });
-</script>
-
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ARC OMEGA HUD v14</title>
+<link rel="stylesheet" href="styles.css"/>
+<link rel="stylesheet" href="[https://unpkg.com/leaflet@1.9.4/dist/leaflet.css](https://unpkg.com/leaflet@1.9.4/dist/leaflet.css)"/>
 </head>
 <body>
+<header class="topbar">
+  <div class="brand"><div class="arcCore" id="arcCore"></div>
+    <div><div class="brandTitle">ARC</div><div class="brandSub">OMEGA HUD • v14</div></div>
+  </div>
+  <div class="topActions">
+    <button id="btnEmergency" class="btn danger">Emergency</button>
+    <button id="btnDrawer" class="btn">Menu</button>
+  </div>
+</header>
 
-  <!-- Drawer -->
-  <div id="drawer" class="drawer">
-    <div class="drawerHeader">
-      <div class="drawerTitle">ARC OMEGA</div>
-      <button id="btnCloseDrawer" class="iconBtn">✕</button>
+<main class="grid">
+  <section class="panel">
+    <h2>Comms / AI</h2>
+    <div id="terminal" class="terminal"></div>
+    <div class="row">
+      <input id="prompt" class="input" placeholder="Type a message or command…"/>
+      <button id="sendBtn" class="btn primary">Send</button>
     </div>
+    <div class="row small">
+      <button id="btnSitrep" class="btn" style="border-color: var(--cyan);">SITREP</button>
+      <button id="btnPing" class="btn">Ping</button>
+      <button id="btnClear" class="btn">Clear</button>
+    </div>
+    <div class="meta">
+      <div><span class="k">API:</span> <span id="metaApi">—</span></div>
+    </div>
+  </section>
 
-    <div class="drawerBody">
+  <section class="panel">
+    <h2>OpenCode Interpreter</h2>
+    <textarea id="codeInput" class="input code-input" placeholder="Enter Python code here..."></textarea>
+    <div class="row small">
+        <button id="btnRunCode" class="btn primary">Run Python</button>
+        <button id="btnClearCode" class="btn">Clear</button>
+    </div>
+    <pre id="codeOutput" class="terminal small">Output will appear here...</pre>
+  </section>
 
-      <div class="drawerSectionTitle">Quick actions</div>
-      <button id="btnRefreshBackend" class="btn">Refresh backend</button>
-      <button id="btnRefreshWeather" class="btn">Refresh weather</button>
-      <button id="btnRefreshNews" class="btn">Refresh news</button>
+  <section class="panel">
+    <h2>Map</h2>
+    <div id="map" class="map"></div>
+    <div class="meta"><div><span class="k">Lat/Lon:</span> <span id="metaLatLon">—</span></div></div>
+  </section>
 
-      <div class="drawerSectionTitle">Services</div>
-      <div class="subtle">Integration health + failover hints</div>
-      <button id="btnRefreshServices" class="btn">Refresh services</button>
-      <div id="servicesBox" class="subtle mono" style="margin-top:6px; white-space:pre-wrap;">Loading…</div>
+  <section class="panel">
+    <h2>Weather (Jacksonville)</h2>
+    <div id="weather" class="big">Loading…</div>
+    <div class="meta" id="weatherMeta"></div>
+  </section>
 
-      
-      <div class="drawerSectionTitle">Tools</div>
-      <div class="subtle">Run tools via the backend (auto-failover)</div>
-      <button id="btnRefreshTools" class="btn">Refresh tools</button>
+  <section class="panel">
+    <h2>Threat Board</h2>
+    <div id="threat" class="list">Loading…</div>
+  </section>
 
-      <div class="toolBox" style="margin-top:8px;">
-        <div class="subtle mono">Tavily Web Search</div>
-        <input id="toolTavilyQ" class="fileInput" type="text" placeholder="search query" />
-        <button id="btnRunTavily" class="btn">Search</button>
+  <section class="panel wide">
+    <h2>Tools</h2>
+    <div class="tools">
+      <div class="tool"><div class="label">News Feed</div><button class="btn" id="btnNews">Refresh</button></div>
+      <div class="tool"><div class="label">Web Search</div>
+        <input class="input" id="searchQ" placeholder="Search query…"/><button class="btn" id="btnSearch">Run</button></div>
+    </div>
+  </section>
+</main>
 
-        <div style="height:10px;"></div>
-        <div class="subtle mono">Wolfram</div>
-        <input id="toolWolframQ" class="fileInput" type="text" placeholder="e.g., 47*19 or distance Jacksonville to Raleigh" />
-        <button id="btnRunWolfram" class="btn">Compute</button>
+<footer class="tickers">
+  <div class="ticker" id="timeTicker">Time: —</div>
+  <div class="ticker" id="newsTicker">News: —</div>
+</footer>
 
-        <div style="height:10px;"></div>
-        <div class="subtle mono">TomTom Search</div>
-        <input id="toolTomTomQ" class="fileInput" type="text" placeholder="e.g., coffee near me, 123 main st" />
-        <button id="btnRunTomTom" class="btn">Search Places</button>
-
-        <div style="height:10px;"></div>
-        <div class="subtle mono">RAGIE Retrieve</div>
-        <input id="toolRagieQ" class="fileInput" type="text" placeholder="question to retrieve docs for" />
-        <button id="btnRunRagie" class="btn">Retrieve</button>
-
-        <div style="height:10px;"></div>
-        <div class="subtle mono">Custom Tool Call</div>
-        <input id="toolPath" class="fileInput" type="text" placeholder="/tools/news or /files etc." />
-        <textarea id="toolBody" class="fileInput mono" rows="4" placeholder='JSON body (optional)'></textarea>
-        <button id="btnRunCustomTool" class="btn">Run</button>
-
-        <div id="toolsStatus" class="subtle mono" style="margin-top:8px; white-space:pre-wrap;">Loading…</div>
+<aside id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawerInner">
+    <div class="drawerHeader"><div class="drawerTitle">ARC MENU</div><button id="btnCloseDrawer" class="btn">Close</button></div>
+    <div class="drawerSection">
+      <div class="drawerSectionTitle">API Gateway</div>
+      <div class="row">
+        <input id="apiBaseInput" class="input" placeholder="[https://your-worker.workers.dev](https://your-worker.workers.dev)"/>
+        <button id="btnSaveApi" class="btn primary">Save</button>
       </div>
-
-      <div class="drawerSectionTitle">Tools Catalog</div>
-      <div class="subtle">Auto-built from backend /tools/registry. Run a tool and optionally save output as a file.</div>
-      <div id="toolsCatalog" class="toolCatalog"></div>
-
-      <div class="drawerSectionTitle">Missions</div>
-      <div class="subtle">Pre-planned safe workflows (allowlisted).</div>
-      <button id="btnRefreshMissions" class="btn">Refresh missions</button>
-      <div id="missionsBox" class="toolCatalog" style="margin-top:8px;"></div>
-
-<div class="drawerSectionTitle">Voice</div>
-      <div class="subtle">Push-to-talk (STT → ARC → TTS)</div>
-      <button id="btnVoiceHold" class="btn">Hold to Talk</button>
-      <button id="btnVoiceStart" class="btn">Start Conversation</button>
-      <label class="subtle" style="display:block; margin-top:8px;"><input type="checkbox" id="chkWakePhrase" /> Require wake phrase ("ARC", "Hey ARC")</label>
-      <button id="btnVoiceDownloadLog" class="btn">Download Voice Log</button>
-      <div id="voiceStatus" class="subtle mono" style="margin-top:6px;">Idle</div>
-      <audio id="voicePlayer" controls style="width:100%; margin-top:6px; display:none;"></audio>
-
-
-      
-      <div class="drawerSectionTitle">Briefing</div>
-      <div class="subtle">Morning brief + alerts (admin-gated send)</div>
-      <button id="btnMorningBrief" class="btn">Generate morning brief</button>
-      <button id="btnSendBrief" class="btn">Send brief (email/text/discord)</button>
-      <div id="briefStatus" class="subtle mono" style="margin-top:6px;">—</div>
-
-      <div class="drawerSectionTitle">Emergency</div>
-      <div class="subtle">Triage mode (bypasses council)</div>
-      <button id="btnEmergencyToggle" class="btn danger">Activate emergency</button>
-      <button id="btnEmergencyClear" class="btn">All clear</button>
-      <div id="emergencyStatus" class="subtle mono" style="margin-top:6px;">Inactive</div>
-
-      <div class="drawerSectionTitle">Council Visualization</div>
-      <div id="councilViz" class="councilViz">
-        <div class="node" data-node="security"></div>
-        <div class="node" data-node="tools"></div>
-        <div class="node" data-node="rag"></div>
-        <div class="node" data-node="ops"></div>
-        <div class="node" data-node="polish"></div>
-        <div class="node" data-node="final"></div>
-        <div class="lines"></div>
-      </div>
-
-      <div class="drawerSectionTitle">Files</div>
-      <div class="subtle">Upload → stored in Mongo/GridFS</div>
-      <input id="fileInput" class="fileInput" type="file" />
-      <button id="uploadBtn" class="btn">Upload</button>
-      <div class="subtle" style="margin-top:8px;">Stored files</div>
-      <div id="filesList" class="filesList mono">Loading…</div>
-
-      <div class="drawerSectionTitle">Council</div>
-      <button id="btnOpenCouncilLog" class="btn">Open council log</button>
-      <div id="councilStatus" class="subtle mono" style="margin-top:8px;">No council session loaded yet.</div>
-      <div id="councilLog" class="councilLog mono" style="display:none;"></div>
-
-      <div class="drawerSectionTitle">Privacy</div>
-      <button id="btnBlackout" class="btn danger">Blackout</button>
+      <div class="help">Set the Worker origin (no <code>/api</code>).</div>
+    </div>
+    <div class="drawerSection">
+      <div class="drawerSectionTitle">Diagnostics</div>
+      <div id="diag" class="terminal"></div>
+      <button id="btnDiag" class="btn">Run Diagnostics</button>
     </div>
   </div>
+</aside>
 
-  <div id="drawerOverlay" class="overlay hidden"></div>
+<div id="banner" class="banner">SYSTEM READY (v14)</div>
 
-  <!-- Blackout -->
-  <div id="blackout" class="blackout hidden"></div>
-
-  <!-- Top bar -->
-  <header class="topbar">
-    <button id="btnMenu" class="iconBtn">☰</button>
-    <button id="btnEmergency" class="iconBtn danger" title="Emergency Mode">⛑</button>
-
-    <div class="topbarMid">
-      <img id="arcLogo" class="arcLogo state-blue" src="./assets/arc_reactor.jpeg" alt="ARC" />
-      <div class="apiLine">
-        API: <span id="apiUrlText"></span>
-      </div>
-      <div class="statusLine">
-        Upstream:
-        <span id="upstreamPill" class="pill ok">
-          <span id="upstreamText">ok</span>
-        </span>
-      </div>
-    </div>
-  </header>
-
-  <main class="wrap">
-
-    <section class="card">
-      <h2>World Time</h2>
-      <div class="ticker">
-        <div id="timeTrack" class="mono">Loading…</div>
-      </div>
-      <div class="subtle">Source: Device timezones</div>
-    </section>
-
-    <section class="card mapCard">
-      <h2>Local Map</h2>
-      <div class="mapFrame">
-        <img id="geoMapImg" alt="Map" />
-        <div id="nightOverlay" class="nightOverlay"></div>
-        <div id="mapPin" class="mapPin"></div>
-      </div>
-      <div class="subtle mono" id="mapStatus">Map loading…</div>
-      <div class="hint">Map uses browser geolocation (no uploaded world map). Night overlay is local day/night.</div>
-    </section>
-
-    <section class="card">
-      <h2>Map</h2>
-      <div id="map" style="height:260px; border-radius:12px; overflow:hidden;"></div>
-      <div class="subtle">Day/night shading + your location (browser geolocation)</div>
-    </section>
-
-    <section class="card">
-      <h2>Weather</h2>
-      <div id="weatherText" class="mono">Loading…</div>
-      <div class="subtle">Source: Open-Meteo (browser geolocation)</div>
-    </section>
-    <section class="card">
-      <h2>Breaking News</h2>
-      <div class="ticker">
-        <div id="newsTrack" class="mono">Loading…</div>
-      </div>
-      <div class="subtle">Source: RSS fallback / configured APIs</div>
-    </section>
-
-    <section class="card">
-      <h2>Threat Board</h2>
-      <div id="threatBoard" class="mono threatBoard">Loading…</div>
-      <div class="subtle">Defensive feeds (CISA/NOAA + headlines)</div>
-    </section>
-
-
-    <section class="card">
-      <h2>Threat Board</h2>
-      <div class="ticker"><div id="threatTrack" class="mono">Loading…</div></div>
-      <div class="subtle">Source: RSS aggregation (CISA + Google News + NHC)</div>
-    </section>
-
-    <section class="card">
-      <h2>News</h2>
-      <div class="ticker">
-        <div id="newsTrack" class="mono">Loading…</div>
-      </div>
-      <div class="subtle">Source: Backend (/tools/news)</div>
-    </section>
-
-    <section class="card">
-      <h2>Terminal</h2>
-      <pre id="terminal" class="terminal mono"></pre>
-
-      <div class="promptRow">
-        <input id="prompt" class="prompt" placeholder="Type a message…" />
-        <button id="sendBtn" class="btn">Send</button>
-      </div>
-    </section>
-
-  </main>
-
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-terminator@1.0.0/L.Terminator.js"></script>
-  <script src="./app.v128.js"></script>
-
-  <footer class="footerTicks">
-    <div class="footerTick">
-      <div class="footerLabel">TIME (24h)</div>
-      <div id="timeFooter" class="mono"></div>
-    </div>
-    <div class="footerTick">
-      <div class="footerLabel">NEWS</div>
-      <div id="newsFooter" class="mono"></div>
-    </div>
-  </footer>
-
-<!-- ARC v12.9 -->
-<div id="jsLoadedBanner" style="position:fixed;top:8px;right:8px;z-index:9999;
-background:rgba(0,255,255,0.12);border:1px solid rgba(0,255,255,0.55);
-color:#7ffcff;padding:6px 10px;border-radius:10px;font-family:system-ui;
-font-size:12px;letter-spacing:.6px;display:none;">
-JS LOADED ✅ (v12.9)
-</div>
-<script>(function(){try{var b=document.getElementById('jsLoadedBanner');if(b){b.style.display='block';}}catch(e){}})();</script>
-
-<script src="hud.v128.js?v=12.9"></script>
-<script src="app.v128.js?v=12.9"></script>
-
-</body>
-</html>
+<script src="[https://unpkg.com/leaflet@1.9.4/dist/leaflet.js](https://unpkg.com/leaflet@1.9.4/dist/leaflet.js)"></script>
+<script src="app.js"></script>
+</body></html>
