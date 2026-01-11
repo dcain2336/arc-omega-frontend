@@ -32,6 +32,14 @@ function getBackends() {
 
 let ACTIVE_API_BASE = localStorage.getItem("arc_active_backend") || getBackends()[0];
 
+// NOTE: ACTIVE_API_BASE is expected to include the Worker proxy prefix, e.g.
+// https://arc-omega-api.dcain1.workers.dev/api
+// We use it for *all* backend calls (including files + voice) so everything
+// goes through the secure gateway.
+function apiBase() {
+  return ACTIVE_API_BASE;
+}
+
 function getWorkerOrigin() {
   // If ACTIVE_API_BASE is ".../api", return the Worker origin without /api
   return (ACTIVE_API_BASE || "").replace(/\/api\/?$/, "");
@@ -41,6 +49,7 @@ function getWorkerOrigin() {
 function setActiveBase(base) {
   ACTIVE_API_BASE = base;
   try { localStorage.setItem("arc_active_backend", base); } catch {}
+  if (apiUrlText) apiUrlText.textContent = ACTIVE_API_BASE;
 }
 
 // session id (persist per browser)
@@ -440,7 +449,7 @@ async async function refreshFilesList() {
     }
     filesList.innerHTML = files.map((f) => {
       const name = (f.name || "file").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      return `• <a href="${API_BASE}/files/${f.id}" target="_blank" rel="noopener noreferrer">${name}</a>
+      return `• <a href="${apiBase()}/files/${f.id}" target="_blank" rel="noopener noreferrer">${name}</a>
   <span class="subtle">(${f.size} bytes)</span>
   <button class="miniBtn" data-act="extract" data-id="${f.id}">Extract</button>
   <button class="miniBtn" data-act="analyze" data-id="${f.id}">Analyze</button>
@@ -459,7 +468,7 @@ uploadBtn?.addEventListener("click", async () => {
     const form = new FormData();
     form.append("file", file);
 
-    const r = await fetch(`${API_BASE}/files`, { method: "POST", body: form });
+    const r = await fetch(`${apiBase()}/files`, { method: "POST", body: form, cache: "no-store" });
     const txt = await r.text();
     let data;
     try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
@@ -635,7 +644,7 @@ async function sendVoiceBlob(blob) {
   const fd = new FormData();
   fd.append("file", blob, "voice.webm");
 
-  const url = `${API_BASE}/voice/chat?session_id=${encodeURIComponent(SESSION_ID)}&provider=auto`;
+  const url = `${apiBase()}/voice/chat?session_id=${encodeURIComponent(SESSION_ID)}&provider=auto`;
   const r = await fetch(url, { method: "POST", body: fd });
   const j = await r.json();
   if (!j.ok) {
@@ -649,7 +658,7 @@ async function sendVoiceBlob(blob) {
   logToTerminal("[VOICE] ARC: " + (j.reply_text || ""));
 
   if (j.audio_file_id) {
-    const audioUrl = `${API_BASE}/files/${encodeURIComponent(j.audio_file_id)}`;
+    const audioUrl = `${apiBase()}/files/${encodeURIComponent(j.audio_file_id)}`;
     voicePlayer.src = audioUrl;
     voicePlayer.style.display = "block";
     // attempt autoplay; iOS may block unless user taps play
@@ -813,7 +822,7 @@ async function sendUtterance(blob) {
   // STT first
   const fd = new FormData();
   fd.append("file", blob, "utterance.webm");
-  const sttResp = await fetch(`${API_BASE}/voice/stt`, { method: "POST", body: fd });
+  const sttResp = await fetch(`${apiBase()}/voice/stt`, { method: "POST", body: fd, cache: "no-store" });
   const sttJson = await sttResp.json();
   if (!sttJson.ok) throw new Error(sttJson.error || "STT failed");
   const transcript = (sttJson.transcript || "").trim();
@@ -849,7 +858,7 @@ async function sendUtterance(blob) {
 
 async function playAudioByFileId(fileId) {
   if (!fileId) return;
-  const url = `${API_BASE}/files/${fileId}`;
+  const url = `${apiBase()}/files/${fileId}`;
   voicePlayer.src = url;
   voicePlayer.style.display = "block";
   try {

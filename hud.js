@@ -1,5 +1,5 @@
 const API_BASE = "https://arc-omega-api.dcain1.workers.dev";
-const API_PROXY = API_BASE; // <-- no /api
+const API_PROXY = API_BASE + "/api";
 const $ = (id) => document.getElementById(id);
 
 function getOrCreate(id, genFn) {
