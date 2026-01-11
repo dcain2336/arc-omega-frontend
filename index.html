@@ -7,6 +7,25 @@
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="./styles.css" />
+
+<script>
+  window.__ARC_JS_LOADED__ = true;
+  document.addEventListener('DOMContentLoaded', () => {
+    const b = document.createElement('div');
+    b.textContent = 'JS LOADED ✅ (v12.8)';
+    b.style.position='fixed'; b.style.top='10px'; b.style.right='10px';
+    b.style.zIndex='99999'; b.style.padding='8px 10px';
+    b.style.border='1px solid rgba(0,255,255,.5)';
+    b.style.borderRadius='10px';
+    b.style.background='rgba(0,0,0,.55)';
+    b.style.color='#00ffff';
+    b.style.fontFamily='system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    b.style.fontSize='12px';
+    document.body.appendChild(b);
+    setTimeout(()=>{ b.style.opacity='0.2'; }, 4000);
+  });
+</script>
+
 </head>
 <body>
 
@@ -222,7 +241,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-terminator@1.0.0/L.Terminator.js"></script>
-  <script src="./app.js"></script>
+  <script src="./app.v128.js"></script>
 
   <footer class="footerTicks">
     <div class="footerTick">
